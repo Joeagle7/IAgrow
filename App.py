@@ -1,66 +1,72 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from datetime import date, timedelta
+import folium
+from streamlit_folium import st_folium
+import requests # <--- Nueva librería para conectar con APIs
 
-# 1. Configuración inicial de la interfaz
-st.set_page_config(page_title="AgroIA - MVP", page_icon="🌱", layout="centered")
+# 1. Configuración de la página
+st.set_page_config(page_title="AgroIA - Panel de Control", layout="wide")
+st.title("🌾 AgroIA: Plataforma Inteligente de Decisión Agrícola")
 
-st.title("🌱 AgroIA: Asistente Agrícola")
-st.write("Bienvenido. Esta herramienta le ayuda a tomar decisiones basadas en datos climáticos y modelos estadísticos de mercado.")
+# 2. Barra lateral (Inputs del usuario)
+st.sidebar.header("Parámetros del Cultivo y Ubicación")
+cultivo = st.sidebar.selectbox("Seleccione el cultivo", ["Maíz", "Trigo", "Soya", "Cacao", "Banano"])
+hectareas = st.sidebar.number_input("Área sembrada (Hectáreas)", min_value=1, value=10)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("Coordenadas GPS")
+# Coordenadas por defecto (Ej. Guayas, Ecuador)
+latitud = st.sidebar.number_input("Latitud", value=-2.1962, format="%.4f")
+longitud = st.sidebar.number_input("Longitud", value=-79.8862, format="%.4f")
+
+# 3. Sección de Mapas en Tiempo Real
+st.subheader("📍 Mapa de Condiciones Parcelarias")
+mapa = folium.Map(location=[latitud, longitud], zoom_start=9)
+folium.Marker([latitud, longitud], popup=f"Finca: {cultivo}").add_to(mapa)
+st_folium(mapa, width=700, height=400)
 
 st.markdown("---")
 
-# 2. Geolocalización (Entrada de datos espaciales)
-st.subheader("📍 1. Ubicación de su Parcela")
-st.write("Ingrese sus coordenadas. En la versión móvil final, esto se detectará con el GPS del celular.")
+# 4. Conexión a la API Meteorológica (Open-Meteo)
+st.subheader("🌤️ Condiciones Agrometeorológicas en Tiempo Real")
 
-# Coordenadas por defecto (Ejemplo: cerca de Quevedo, zona cacaotera)
-col1, col2 = st.columns(2)
-with col1:
-    latitud = st.number_input("Latitud", value=-1.0286, format="%.4f")
-with col2:
-    longitud = st.number_input("Longitud", value=-79.4635, format="%.4f")
-
-# Mostrar la ubicación en un mapa simple
-df_mapa = pd.DataFrame({'lat': [latitud], 'lon': [longitud]})
-st.map(df_mapa, zoom=8)
-
-st.markdown("---")
-
-# 3. Simulación de API Meteorológica y Alertas
-st.subheader("🌤️ 2. Condiciones Agrometeorológicas")
-st.write("Consulta a la base de datos abierta (Simulación de Open-Meteo).")
-
-if st.button("Consultar Clima Actual"):
-    # En un entorno real, aquí Python haría una petición HTTP a la API de Open-Meteo
-    st.success("Datos obtenidos con éxito.")
+# Función estadística/computacional para extraer datos
+def obtener_clima(lat, lon):
+    # Endpoint de la API con las variables que necesitamos (Temperatura, Humedad, Viento)
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true&hourly=relativehumidity_2m&timezone=America/Guayaquil"
+    respuesta = requests.get(url)
     
-    # Métricas clave para el agricultor
-    m1, m2, m3 = st.columns(3)
-    m1.metric(label="Temperatura", value="26°C", delta="-1°C (Frente frío)")
-    m2.metric(label="Humedad Relativa", value="85%", delta="5%")
-    m3.metric(label="Precipitación Esperada", value="15 mm", delta="Alta")
+    if respuesta.status_code == 200: # El código 200 significa "Conexión Exitosa"
+        return respuesta.json()
+    else:
+        return None
+
+if st.button("Consultar Clima Satelital"):
+    st.info("Conectando con servidores meteorológicos...")
+    datos_clima = obtener_clima(latitud, longitud)
     
-    # Sistema de alerta lógica simple
-    st.warning("⚠️ **Alerta Temprana:** Alta probabilidad de lluvias fuertes en las próximas 48 horas. Se recomienda postergar la aplicación de fertilizantes foliares para evitar el lavado del producto.")
-
-st.markdown("---")
-
-# 4. Simulación de Modelo Econométrico (Proyección de Precios)
-st.subheader("📈 3. Proyección de Precio del Cacao")
-st.write("Estimación basada en modelo VECM (Vectores de Corrección de Errores).")
-
-# Generación de datos simulados para ilustrar la predicción a 6 meses
-fechas = [date.today() + timedelta(days=30*i) for i in range(6)]
-# Simulamos una tendencia alcista con cierta volatilidad estocástica
-precios_base = np.array([3200, 3250, 3180, 3300, 3450, 3400]) 
-df_precios = pd.DataFrame({
-    "Fecha": fechas,
-    "Precio Proyectado (USD/Tonelada)": precios_base
-})
-df_precios.set_index("Fecha", inplace=True)
-
-# Gráfico de líneas nativo de Streamlit
-st.line_chart(df_precios)
-st.info("💡 **Análisis de Mercado:** El modelo sugiere una tendencia al alza hacia el trimestre final. Se sugiere retener el inventario seco si sus costos de almacenamiento lo permiten.")
+    if datos_clima:
+        st.success("Datos extraídos con éxito.")
+        
+        # Extracción de variables del JSON
+        temp_actual = datos_clima['current_weather']['temperature']
+        viento_actual = datos_clima['current_weather']['windspeed']
+        # Tomamos la humedad de la hora actual
+        humedad_actual = datos_clima['hourly']['relativehumidity_2m'][0] 
+        
+        # Visualización de métricas
+        m1, m2, m3 = st.columns(3)
+        m1.metric(label="Temperatura Actual", value=f"{temp_actual} °C")
+        m2.metric(label="Velocidad del Viento", value=f"{viento_actual} km/h")
+        m3.metric(label="Humedad Relativa", value=f"{humedad_actual} %")
+        
+        # Alerta Temprana Basada en Datos
+        if temp_actual > 30:
+            st.warning("⚠️ **Alerta:** Alta temperatura detectada. Se sugiere incrementar la lámina de riego para evitar estrés hídrico en el cultivo.")
+        elif temp_actual < 15:
+            st.warning("⚠️ **Alerta:** Temperatura baja. Monitorear riesgo de ralentización del metabolismo de la planta.")
+        else:
+            st.success("✅ Condiciones térmicas óptimas para el desarrollo fisiológico.")
+            
+    else:
+        st.error("Fallo de conexión con la API.")
