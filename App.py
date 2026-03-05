@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-import requests # <--- Nueva librería para conectar con APIs
+import requests # API's #
 
 # 1. Configuración de la página
 st.set_page_config(page_title="AgroIA - Panel de Control", layout="wide")
@@ -70,3 +70,4 @@ if st.button("Consultar Clima Satelital"):
             
     else:
         st.error("Fallo de conexión con la API.")
+
