@@ -2,72 +2,84 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-import requests # API's #
+import requests
+from streamlit_geolocation import streamlit_geolocation
 
-# 1. Configuración de la página
 st.set_page_config(page_title="AgroIA - Panel de Control", layout="wide")
 st.title("🌾 AgroIA: Plataforma Inteligente de Decisión Agrícola")
 
-# 2. Barra lateral (Inputs del usuario)
-st.sidebar.header("Parámetros del Cultivo y Ubicación")
-cultivo = st.sidebar.selectbox("Seleccione el cultivo", ["Maíz", "Trigo", "Soya", "Cacao", "Banano"])
-hectareas = st.sidebar.number_input("Área sembrada (Hectáreas)", min_value=1, value=10)
+# --- BARRA LATERAL: PARÁMETROS Y GPS ---
+st.sidebar.header("1. Ubicación de la Parcela")
+st.sidebar.write("Haga clic abajo para obtener su ubicación actual (permita el acceso al GPS en su navegador):")
+
+# Botón mágico de geolocalización
+ubicacion = streamlit_geolocation()
+
+# Lógica condicional: Si el GPS captura datos, úsalos; si no, usa coordenadas de Ecuador
+if ubicacion['latitude'] is not None and ubicacion['longitude'] is not None:
+    latitud = round(ubicacion['latitude'], 4)
+    longitud = round(ubicacion['longitude'], 4)
+    st.sidebar.success(f"📍 GPS Capturado: {latitud}, {longitud}")
+else:
+    latitud = -2.1962 # Guayas por defecto
+    longitud = -79.8862
+    st.sidebar.info("Usando coordenadas por defecto. Active el GPS.")
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("Coordenadas GPS")
-# Coordenadas por defecto (Ej. Guayas, Ecuador)
-latitud = st.sidebar.number_input("Latitud", value=-2.1962, format="%.4f")
-longitud = st.sidebar.number_input("Longitud", value=-79.8862, format="%.4f")
+cultivo = st.sidebar.selectbox("Seleccione el cultivo", ["Cacao", "Banano", "Maíz", "Arroz"])
 
-# 3. Sección de Mapas en Tiempo Real
-st.subheader("📍 Mapa de Condiciones Parcelarias")
-mapa = folium.Map(location=[latitud, longitud], zoom_start=9)
-folium.Marker([latitud, longitud], popup=f"Finca: {cultivo}").add_to(mapa)
-st_folium(mapa, width=700, height=400)
+# --- MAPA DE LA PARCELA ---
+mapa = folium.Map(location=[latitud, longitud], zoom_start=12)
+folium.Marker([latitud, longitud], popup="Mi Parcela").add_to(mapa)
+st_folium(mapa, width=700, height=300)
 
 st.markdown("---")
 
-# 4. Conexión a la API Meteorológica (Open-Meteo)
-st.subheader("🌤️ Condiciones Agrometeorológicas en Tiempo Real")
+# --- EXTRACCIÓN DE DATOS: SOILGRIDS Y OPEN-METEO ---
+col1, col2 = st.columns(2)
 
-# Función estadística/computacional para extraer datos
-def obtener_clima(lat, lon):
-    # Endpoint de la API con las variables que necesitamos (Temperatura, Humedad, Viento)
-    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true&hourly=relativehumidity_2m&timezone=America/Guayaquil"
-    respuesta = requests.get(url)
-    
-    if respuesta.status_code == 200: # El código 200 significa "Conexión Exitosa"
-        return respuesta.json()
-    else:
-        return None
+with col1:
+    st.subheader("🌍 Análisis de Suelo (SoilGrids 0-5cm)")
+    if st.button("Analizar Calidad del Suelo"):
+        with st.spinner('Consultando base de datos satelital...'):
+            # Consulta a la API REST de SoilGrids (pH, Arcilla y Arena)
+            url_soil = f"https://rest.isric.org/soilgrids/v2.0/properties/query?lon={longitud}&lat={latitud}&property=phh2o&property=clay&property=sand&depth=0-5cm&value=mean"
+            try:
+                resp_soil = requests.get(url_soil).json()
+                # SoilGrids devuelve el pH multiplicado por 10, hay que dividirlo
+                ph = resp_soil['properties']['layers'][1]['depths'][0]['values']['mean'] / 10
+                arcilla = resp_soil['properties']['layers'][0]['depths'][0]['values']['mean'] / 10 # Porcentaje
+                
+                st.metric("Nivel de pH (Acidez)", f"{ph}")
+                st.metric("Composición de Arcilla", f"{arcilla}%")
+                
+                if ph < 5.5:
+                    st.warning("⚠️ **Alerta:** Suelo muy ácido. Considerar encalado para que el cultivo absorba el fertilizante.")
+                else:
+                    st.success("✅ pH dentro de rangos tolerables.")
+            except:
+                st.error("Error al extraer datos de SoilGrids en esta coordenada.")
 
-if st.button("Consultar Clima Satelital"):
-    st.info("Conectando con servidores meteorológicos...")
-    datos_clima = obtener_clima(latitud, longitud)
-    
-    if datos_clima:
-        st.success("Datos extraídos con éxito.")
-        
-        # Extracción de variables del JSON
-        temp_actual = datos_clima['current_weather']['temperature']
-        viento_actual = datos_clima['current_weather']['windspeed']
-        # Tomamos la humedad de la hora actual
-        humedad_actual = datos_clima['hourly']['relativehumidity_2m'][0] 
-        
-        # Visualización de métricas
-        m1, m2, m3 = st.columns(3)
-        m1.metric(label="Temperatura Actual", value=f"{temp_actual} °C")
-        m2.metric(label="Velocidad del Viento", value=f"{viento_actual} km/h")
-        m3.metric(label="Humedad Relativa", value=f"{humedad_actual} %")
-        
-        # Alerta Temprana Basada en Datos
-        if temp_actual > 30:
-            st.warning("⚠️ **Alerta:** Alta temperatura detectada. Se sugiere incrementar la lámina de riego para evitar estrés hídrico en el cultivo.")
-        elif temp_actual < 15:
-            st.warning("⚠️ **Alerta:** Temperatura baja. Monitorear riesgo de ralentización del metabolismo de la planta.")
-        else:
-            st.success("✅ Condiciones térmicas óptimas para el desarrollo fisiológico.")
+with col2:
+    st.subheader("🌤️ Clima: Histórico y Pronóstico")
+    if st.button("Generar Serie de Tiempo Climática"):
+        with st.spinner('Calculando evapotranspiración y lluvia...'):
+            # Pedimos temperatura, lluvia y evapotranspiración (3 días pasados + 7 futuros)
+            url_meteo = f"https://api.open-meteo.com/v1/forecast?latitude={latitud}&longitude={longitud}&daily=temperature_2m_max,precipitation_sum,et0_fao_evapotranspiration&past_days=3&timezone=America/Guayaquil"
+            resp_meteo = requests.get(url_meteo).json()
             
-    else:
-        st.error("Fallo de conexión con la API.")
-
+            # Convertimos el JSON en un DataFrame de Pandas (Estructura de tabla)
+            df_clima = pd.DataFrame({
+                "Fecha": resp_meteo['daily']['time'],
+                "Temp. Máxima (°C)": resp_meteo['daily']['temperature_2m_max'],
+                "Lluvia (mm)": resp_meteo['daily']['precipitation_sum'],
+                "Evapotranspiración (mm)": resp_meteo['daily']['et0_fao_evapotranspiration']
+            })
+            df_clima['Fecha'] = pd.to_datetime(df_clima['Fecha'])
+            df_clima.set_index('Fecha', inplace=True)
+            
+            # Mostramos el gráfico de series de tiempo
+            st.line_chart(df_clima[['Temp. Máxima (°C)', 'Evapotranspiración (mm)']])
+            st.bar_chart(df_clima[['Lluvia (mm)']])
+            
+            st.info("💡 **Interpretación:** La Evapotranspiración (línea) indica el estrés hídrico de la planta. Si este valor es persistentemente mayor que la Lluvia (barras), usted debe programar riego suplementario.")
