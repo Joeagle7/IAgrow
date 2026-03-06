@@ -21,25 +21,14 @@ def inicializar_google_earth_engine():
             import json
             from google.oauth2 import service_account
             
-            # Extraemos el texto crudo del secreto
-            raw_secret = st.secrets["EE_CREDENTIALS"]
+            # Ahora que el secreto tiene comillas simples ('''), json.loads funcionará perfectamente sin filtros raros.
+            creds_dict = json.loads(st.secrets["EE_CREDENTIALS"])
             
-            # FILTRO DE LIMPIEZA: Convertimos saltos de línea reales en texto '\n' 
-            # para que el formato JSON no colapse.
-            if isinstance(raw_secret, str):
-                cleaned_secret = raw_secret.replace('\n', '\\n').replace('\r', '')
-                # Limpiamos dobles barras por si acaso
-                cleaned_secret = cleaned_secret.replace('\\\\n', '\\n')
-                # strict=False permite que Python sea tolerante con la sintaxis
-                creds_dict = json.loads(cleaned_secret, strict=False)
-            else:
-                creds_dict = raw_secret
-                
             # Creamos las credenciales formales de Google
             credentials = service_account.Credentials.from_service_account_info(creds_dict)
             ee.Initialize(credentials)
             
-        # 2. Si está en su computadora local, usa la sesión de la terminal
+        # 2. Si está en su computadora local (localhost), usa la sesión que ya teníamos
         else:
             ee.Initialize()
             
@@ -188,4 +177,5 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
             except Exception as e:
                 st.error(f"❌ Ocurrió un error al extraer los datos satelitales: {e}")            # Interpretación para el agricultor
             st.info("💡 **Interpretación Agronómica:** Las zonas en **Verde Oscuro** indican cultivos sanos y vigorosos. Las zonas en **Amarillo/Naranja** señalan estrés (falta de agua, plagas o deficiencia de nutrientes). Las zonas en **Rojo** representan suelo desnudo, infraestructura o plantas marchitas.")
+
 
