@@ -8,6 +8,8 @@ import plotly.express as px
 import ee
 from datetime import datetime, timedelta
 import google.generativeai as genai
+from PIL import Image
+import io
 
 # --- 1. CONFIGURACIÓN Y ESTADO DE MEMORIA ---
 st.set_page_config(page_title="AgroIA - Panel de Decisión", page_icon="🌾", layout="wide")
@@ -57,17 +59,14 @@ if nuevo_lat != st.session_state.lat or nuevo_lon != st.session_state.lon:
     st.rerun()
 
 st.sidebar.markdown("---")
-# RENOMBRADO DEL MENÚ CLIMA
 opcion_menu = st.sidebar.radio("📋 Ir a:", ["Menú Principal (Mapa)", "Control meteorológico y predicción climática", "Análisis Suelo", "Mapa Satelital (NDVI)", "Diagnóstico IA 🤖"])
 
 # --- FUNCIONES AUXILIARES ---
 def grados_a_direccion(grados):
-    # TEXTOS COMPLETOS DE LOS PUNTOS CARDINALES
     arr = ["Norte", "Norte-Noreste", "Noreste", "Este-Noreste", "Este", "Este-Sureste", "Sureste", "Sur-Sureste", "Sur", "Sur-Suroeste", "Suroeste", "Oeste-Suroeste", "Oeste", "Oeste-Noroeste", "Noroeste", "Norte-Noroeste"]
     return arr[int((grados/22.5)+.5) % 16]
 
 def obtener_fecha_espanol(fecha):
-    # TRADUCTOR MANUAL DE MESES
     meses = {1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio', 7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'}
     return f"{fecha.day} de {meses[fecha.month]} de {fecha.year}"
 
@@ -136,7 +135,6 @@ elif opcion_menu == "Análisis Suelo":
     json_suelo = obtener_datos_suelo(st.session_state.lat, st.session_state.lon)
     
     if json_suelo and 'properties' in json_suelo:
-        # FUNCIÓN BLINDADA PARA EXTRAER DATOS DEL SUELO
         def extraer_dato_seguro(json_data, property_name, depth_label):
             try:
                 for layer in json_data['properties']['layers']:
@@ -183,7 +181,6 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
                     st.warning("☁️ Cobertura nubosa total y permanente en este trimestre.")
                 else:
                     imagen_limpia = coleccion.median()
-                    # FECHAS EN ESPAÑOL PERFECTO
                     f_inicio_str = obtener_fecha_espanol(fecha_inicio)
                     f_fin_str = obtener_fecha_espanol(fecha_fin)
                     st.info(f"🧩 **Mosaico Satelital:** Esta imagen es una fusión matemática de los píxeles despejados capturados entre el **{f_inicio_str}** y el **{f_fin_str}**. Muestra la tendencia de salud del trimestre.")
@@ -206,7 +203,6 @@ elif opcion_menu == "Diagnóstico IA 🤖":
     
     st.warning("**⚠️ Aviso Legal:** Los resultados son probabilísticos. Verifique con un agrónomo.")
     
-    # 1. EXTRACCIÓN AUTOMÁTICA DE CONTEXTO Y CLIMA (Lo que usted solicitó)
     elevacion_actual = obtener_elevacion(st.session_state.lat, st.session_state.lon)
     clima_actual = obtener_datos_clima(st.session_state.lat, st.session_state.lon)
     
@@ -220,7 +216,6 @@ elif opcion_menu == "Diagnóstico IA 🤖":
     
     st.markdown("---")
     
-    # 2. FORMULARIO
     c1, c2, c3 = st.columns(3)
     with c1:
         cultivo_seleccionado = st.selectbox("🌱 Cultivo", ["Cacao", "Banano", "Arroz", "Maíz", "Otro"])
@@ -245,7 +240,19 @@ elif opcion_menu == "Diagnóstico IA 🤖":
         foto_planta = st.file_uploader("📸 Subir foto clara del problema", type=['jpg', 'jpeg', 'png'])
         if foto_planta is not None: st.image(foto_planta, use_container_width=True)
 
-# 2. EL PROMPT ESTRUCTURADO Y AVANZADO
+    # AQUÍ ESTÁ EL BOTÓN DE ACCIÓN CON EL PROMPT CORRECTAMENTE ALINEADO
+    if st.button("🧠 Analizar Cultivo con IA", use_container_width=True):
+        if not gemini_activo:
+            st.error("⚠️ La API de Gemini no está configurada en los Secretos.")
+        elif len(sintomas_texto) < 10 and not foto_planta:
+            st.warning("⚠️ Por favor, describa el problema detalladamente o suba una fotografía clara.")
+        else:
+            with st.spinner("🧠 El Sistema Experto está analizando las variables y la imagen..."):
+                try:
+                    # Inicializamos el modelo de Google
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    
+                    # El prompt estructurado inyectando las variables
                     prompt_experto = f"""
                     Eres un sistema experto en agronomía tropical y fitopatología.
                     Tu tarea es analizar el siguiente caso y proporcionar un diagnóstico estructurado.
@@ -288,3 +295,21 @@ elif opcion_menu == "Diagnóstico IA 🤖":
                     - Advierte al final que este es un pre-diagnóstico de IA y requiere validación de un agrónomo certificado en campo.
                     Responde en español técnico pero accesible para un agricultor con educación secundaria.
                     """
+                    
+                    # Empaquetamos todo
+                    paquete_analisis = [prompt_experto]
+                    if foto_planta is not None:
+                        imagen_pil = Image.open(foto_planta)
+                        paquete_analisis.append(imagen_pil)
+                        
+                    # Hacemos la llamada a la IA
+                    respuesta = model.generate_content(paquete_analisis)
+                    
+                    # Imprimimos resultados
+                    st.success("✅ Diagnóstico Completado con Éxito")
+                    st.markdown("---")
+                    st.markdown("### 📋 Informe de Diagnóstico Agronómico (IA)")
+                    st.write(respuesta.text)
+                    
+                except Exception as e:
+                    st.error(f"❌ Ocurrió un error de conexión con el servidor de IA: {e}")
