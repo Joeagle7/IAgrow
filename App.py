@@ -67,6 +67,13 @@ def grados_a_direccion(grados):
     arr = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"]
     return arr[int((grados/22.5)+.5) % 16]
 
+def obtener_elevacion(lat, lon):
+    url = f"https://api.open-meteo.com/v1/elevation?latitude={lat}&longitude={lon}"
+    try: 
+        return requests.get(url).json()['elevation'][0]
+    except: 
+        return "No disponible"
+        
 def obtener_datos_clima(lat, lon):
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true&hourly=temperature_2m,relativehumidity_2m,dewpoint_2m,apparent_temperature,precipitation_probability,pressure_msl,windspeed_10m,winddirection_10m,et0_fao_evapotranspiration&past_days=3&timezone=America/Guayaquil"
     try: return requests.get(url).json()
@@ -219,31 +226,46 @@ elif opcion_menu == "Diagnóstico IA 🤖":
     * **Responsabilidad y Sostenibilidad:** Priorizamos el uso de herramientas sostenibles con el medio ambiente. Sin embargo, usted **siempre debe verificar** este pre-diagnóstico con un ingeniero agrónomo o técnico de campo antes de aplicar cualquier tratamiento o agroquímico.
     """)
     
-    st.info("""
+st.info("""
     **📖 Manual de Uso:**
-    Llene los datos de su parcela con la mayor precisión posible. El contexto (riego, altitud, clima) es vital para que la IA entienda su entorno.
+    Llene los datos de su parcela con la mayor precisión posible. El contexto (riego, edad del cultivo, clima) es vital para que la IA entienda su entorno.
     """)
     
     st.markdown("---")
     
+    # 1. EXTRACCIÓN AUTOMÁTICA DE CONTEXTO
+    elevacion_actual = obtener_elevacion(st.session_state.lat, st.session_state.lon)
+    st.success(f"📍 **Contexto Geográfico Extraído Automáticamente:** Latitud {st.session_state.lat}, Longitud {st.session_state.lon} | ⛰️ **Altitud:** {elevacion_actual} m.s.n.m.")
+    
+    # 2. FORMULARIO DE CONTEXTO AGRONÓMICO
     c1, c2, c3 = st.columns(3)
     with c1:
         cultivo_seleccionado = st.selectbox("🌱 Cultivo", ["Cacao", "Banano", "Arroz", "Maíz", "Otro"])
         if cultivo_seleccionado == "Otro":
             cultivo_seleccionado = st.text_input("Especifique su cultivo:")
+        dias_siembra = st.number_input("📅 Días desde la siembra", min_value=0, value=30, step=1)
+        
     with c2:
-        area_terreno = st.number_input("📏 Área (Hectáreas)", min_value=0.1, value=1.0, step=0.5)
-        altitud = st.number_input("⛰️ Altitud (m.s.n.m)", min_value=0, value=100, step=50)
-    with c3:
+        col_val, col_uni = st.columns([1.5, 1])
+        with col_val:
+            area_terreno = st.number_input("📏 Tamaño", min_value=0.1, value=1.0, step=0.1)
+        with col_uni:
+            unidad_area = st.selectbox("Unidad", ["Hectáreas", "m²"])
         tipo_riego = st.selectbox("💧 Tipo de Riego", ["Secano (Solo lluvia)", "Goteo", "Aspersión", "Gravedad/Inundación", "Cuenca/Río cercano"])
+        
+    with c3:
+        st.write("🗺️ **Forma del Terreno (Opcional)**")
+        archivo_terreno = st.file_uploader("Adjuntar polígono", type=['geojson', 'kml', 'json'], help="Si tiene mapeada su parcela, suba el archivo aquí.")
+        st.caption("*Nota: La herramienta de dibujo manual en el mapa interactivo se habilitará en una próxima actualización.*")
 
     st.markdown("---")
     
+    # 3. FORMULARIO DE SÍNTOMAS Y EVIDENCIA
     c4, c5 = st.columns(2)
     with c4:
         parte_afectada = st.selectbox("🍂 Parte afectada", ["Hojas", "Tallo o Tronco", "Fruto o Espiga", "Raíz", "Toda la planta"])
-        dias_sintomas = st.slider("⏱️ Días con síntomas", 1, 30, 5)
-        sintomas_texto = st.text_area("✍️ Describa detalladamente el problema:", placeholder="Ej: Manchas amarillas con bordes secos...")
+        dias_sintomas = st.slider("⏱️ Días con síntomas visibles", 1, 30, 5)
+        sintomas_texto = st.text_area("✍️ Describa detalladamente el problema:", placeholder="Ej: Las hojas bajas presentan necrosis en los bordes...")
         
     with c5:
         st.error("**📸 Dependencia de Entrada:** Es probable que si las fotos tienen mala calidad, están borrosas o mal iluminadas, el programa infravalore la imagen y entregue un diagnóstico incorrecto.")
@@ -251,11 +273,3 @@ elif opcion_menu == "Diagnóstico IA 🤖":
         
         if foto_planta is not None:
             st.image(foto_planta, caption="Imagen cargada para análisis", use_container_width=True)
-
-    if st.button("🧠 Analizar Cultivo con IA", use_container_width=True):
-        if not gemini_activo:
-            st.error("⚠️ La API de Gemini no está configurada en los Secretos.")
-        elif len(sintomas_texto) < 10 and not foto_planta:
-            st.warning("⚠️ Por favor, describa el problema o suba una fotografía clara.")
-        else:
-            st.success("✅ Datos recibidos. Listo para programar el 'Prompt' de análisis.")
