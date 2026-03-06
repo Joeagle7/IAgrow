@@ -44,8 +44,16 @@ def inicializar_google_earth_engine():
         return False
 
 gee_activo = inicializar_google_earth_engine()
-st.markdown("""<style>.stMetric { background: rgba(255, 255, 255, 0.05); border-radius: 5px; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.1); }</style>""", unsafe_allow_html=True)
-st.title("🌾 AgroIA: Plataforma Inteligente de Decisión Agrícola")
+st.markdown("### Opción B: Seleccionar en el Mapa Interactivo")
+    st.write("Haga **clic** sobre su parcela. El marcador rojo se moverá exactamente a su selección.")
+    
+    # Asegúrese de que estas 3 líneas tengan exactamente la misma sangría que las de arriba
+    m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=13)
+    folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="red", icon="info-sign")).add_to(m)
+    
+    output = st_folium(m, width=900, height=500, key="mapa_principal", returned_objects=["last_clicked"])
+
+    if output and output.get('last_clicked'):
 
 # --- 2. BARRA LATERAL ---
 st.sidebar.header("🕹️ Coordenadas Activas")
@@ -215,5 +223,6 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
                     
             except Exception as e:
                 st.error(f"❌ Ocurrió un error al extraer los datos satelitales: {e}")
+
 
 
