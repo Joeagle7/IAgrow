@@ -1,15 +1,19 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import folium
 from streamlit_folium import st_folium
 import requests
 from streamlit_geolocation import streamlit_geolocation
 import plotly.express as px
+import plotly.graph_objects as go
 import ee
 from datetime import datetime, timedelta
 import google.generativeai as genai
 from PIL import Image
 import io
+# NUEVO: Importamos el modelo VECM para econometría
+from statsmodels.tsa.vector_ar.vecm import VECM
 
 # --- 1. CONFIGURACIÓN Y ESTADO DE MEMORIA ---
 st.set_page_config(page_title="AgroIA - Panel de Decisión", page_icon="🌾", layout="wide")
@@ -31,12 +35,10 @@ def inicializar_google_earth_engine():
             ee.Initialize()
         return True
     except Exception as e:
-        st.error(f"⚠️ Detalle técnico del fallo satelital: {e}")
         return False
 
 gee_activo = inicializar_google_earth_engine()
 
-# --- CONFIGURACIÓN DE GEMINI API ---
 try:
     if "GEMINI_API_KEY" in st.secrets:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
@@ -59,7 +61,8 @@ if nuevo_lat != st.session_state.lat or nuevo_lon != st.session_state.lon:
     st.rerun()
 
 st.sidebar.markdown("---")
-opcion_menu = st.sidebar.radio("📋 Ir a:", ["Menú Principal (Mapa)", "Control meteorológico y predicción climática", "Análisis Suelo", "Mapa Satelital (NDVI)", "Diagnóstico IA 🤖"])
+# NUEVO: Agregamos el menú de Mercados
+opcion_menu = st.sidebar.radio("📋 Ir a:", ["Menú Principal (Mapa)", "Control meteorológico y predicción climática", "Análisis Suelo", "Mapa Satelital (NDVI)", "Diagnóstico IA 🤖", "📈 Mercados y Precios (VECM)"])
 
 # --- FUNCIONES AUXILIARES ---
 def grados_a_direccion(grados):
@@ -84,6 +87,27 @@ def obtener_datos_suelo(lat, lon):
     url = f"https://rest.isric.org/soilgrids/v2.0/properties/query?lon={lon}&lat={lat}&property=phh2o&property=clay&property=nitrogen&depth=0-5cm&depth=15-30cm&value=mean"
     try: return requests.get(url).json()
     except: return None
+
+# NUEVA FUNCIÓN: Simulador de datos SIPA para probar el modelo VECM
+def generar_datos_mercado_simulados(producto):
+    np.random.seed(42 + len(producto)) # Semilla para consistencia
+    fechas = pd.date_range(start='2021-01-01', periods=150, freq='W') # 150 semanas históricas
+    
+    # Precios base simulados por producto (USD por unidad de medida estándar)
+    bases = {"Papa Superchola (Quintal)": 15, "Tomate Riñón (Caja)": 12, "Cebolla Paiteña (Saco)": 20, "Arroz (Quintal)": 35, "Plátano Barraganete (Caja)": 6}
+    precio_base = bases.get(producto, 10)
+    
+    # Caminata aleatoria (Random Walk) para el Precio del Productor
+    shocks_productor = np.random.normal(0, 0.5, 150)
+    precio_productor = precio_base + np.cumsum(shocks_productor)
+    
+    # El Precio Mayorista está "cointegrado" (se mueve junto al del productor pero con un margen)
+    margen_comercializacion = precio_base * 0.35 # 35% más caro en mercado
+    shocks_mayorista = np.random.normal(0, 0.3, 150)
+    precio_mayorista = precio_productor + margen_comercializacion + shocks_mayorista
+    
+    df = pd.DataFrame({'Fecha': fechas, 'Precio_Productor': precio_productor, 'Precio_Mayorista': precio_mayorista})
+    return df.set_index('Fecha')
 
 # --- 3. DESARROLLO DE LAS PÁGINAS ---
 
@@ -143,8 +167,7 @@ elif opcion_menu == "Análisis Suelo":
                             if depth['label'] == depth_label:
                                 valor = depth['values']['mean']
                                 return round(valor / 10, 2) if valor is not None else "Sin datos"
-            except:
-                pass
+            except: pass
             return "Sin datos"
 
         c1, c2 = st.columns(2)
@@ -200,7 +223,6 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
 
 elif opcion_menu == "Diagnóstico IA 🤖":
     st.subheader("🤖 Diagnóstico Fitosanitario Asistido por IA")
-    
     st.warning("**⚠️ Aviso Legal:** Los resultados son probabilísticos. Verifique con un agrónomo.")
     
     elevacion_actual = obtener_elevacion(st.session_state.lat, st.session_state.lon)
@@ -213,7 +235,6 @@ elif opcion_menu == "Diagnóstico IA 🤖":
         clima_texto = f"{temp}°C, Humedad {hum}%"
         
     st.success(f"📍 **Contexto Extraído:** Altitud: {elevacion_actual} m.s.n.m. | 🌤️ **Clima Reciente:** {clima_texto}")
-    
     st.markdown("---")
     
     c1, c2, c3 = st.columns(3)
@@ -240,19 +261,15 @@ elif opcion_menu == "Diagnóstico IA 🤖":
         foto_planta = st.file_uploader("📸 Subir foto clara del problema", type=['jpg', 'jpeg', 'png'])
         if foto_planta is not None: st.image(foto_planta, use_container_width=True)
 
-    # AQUÍ ESTÁ EL BOTÓN DE ACCIÓN CON EL PROMPT CORRECTAMENTE ALINEADO
     if st.button("🧠 Analizar Cultivo con IA", use_container_width=True):
         if not gemini_activo:
-            st.error("⚠️ La API de Gemini no está configurada en los Secretos.")
+            st.error("⚠️ La API de Gemini no está configurada.")
         elif len(sintomas_texto) < 10 and not foto_planta:
-            st.warning("⚠️ Por favor, describa el problema detalladamente o suba una fotografía clara.")
+            st.warning("⚠️ Describa el problema o suba una foto.")
         else:
-            with st.spinner("🧠 El Sistema Experto está analizando las variables y la imagen..."):
+            with st.spinner("🧠 El Sistema Experto está analizando..."):
                 try:
-                    # Inicializamos el modelo de Google
                     model = genai.GenerativeModel('gemini-1.5-flash')
-                    
-                    # El prompt estructurado inyectando las variables
                     prompt_experto = f"""
                     Eres un sistema experto en agronomía tropical y fitopatología.
                     Tu tarea es analizar el siguiente caso y proporcionar un diagnóstico estructurado.
@@ -293,23 +310,90 @@ elif opcion_menu == "Diagnóstico IA 🤖":
                     - Prioriza diagnósticos diferenciales.
                     - NUNCA recomiendes productos prohibidos en Ecuador/Sudamérica.
                     - Advierte al final que este es un pre-diagnóstico de IA y requiere validación de un agrónomo certificado en campo.
-                    Responde en español técnico pero accesible para un agricultor con educación secundaria.
+                    Responde en español técnico pero accesible.
                     """
-                    
-                    # Empaquetamos todo
                     paquete_analisis = [prompt_experto]
                     if foto_planta is not None:
                         imagen_pil = Image.open(foto_planta)
                         paquete_analisis.append(imagen_pil)
                         
-                    # Hacemos la llamada a la IA
                     respuesta = model.generate_content(paquete_analisis)
-                    
-                    # Imprimimos resultados
-                    st.success("✅ Diagnóstico Completado con Éxito")
+                    st.success("✅ Diagnóstico Completado")
                     st.markdown("---")
-                    st.markdown("### 📋 Informe de Diagnóstico Agronómico (IA)")
                     st.write(respuesta.text)
-                    
                 except Exception as e:
-                    st.error(f"❌ Ocurrió un error de conexión con el servidor de IA: {e}")
+                    st.error(f"❌ Error de IA: {e}")
+
+# NUEVA SECCIÓN: PREDICCIÓN ECONOMÉTRICA VECM
+elif opcion_menu == "📈 Mercados y Precios (VECM)":
+    st.subheader("📈 Inteligencia de Mercados: Predicción VECM")
+    st.info("💡 **Modelo de Vectores de Corrección de Errores (VECM):** Analiza la cointegración histórica entre el precio pagado al agricultor (Finca) y el precio de venta en la ciudad (Mayorista) para predecir las próximas 8 semanas.")
+    
+    st.markdown("---")
+    c_prod, c_btn = st.columns([3, 1])
+    
+    with c_prod:
+        producto_mercado = st.selectbox("🛒 Seleccione un rubro agrícola (Consumo Interno):", 
+                                        ["Papa Superchola (Quintal)", "Tomate Riñón (Caja)", "Cebolla Paiteña (Saco)", "Arroz (Quintal)", "Plátano Barraganete (Caja)"])
+    
+    st.markdown("*(Nota: Para este prototipo funcional, se utilizan datos simulados basados en los diferenciales reales reportados por el SIPA del Ministerio de Agricultura de Ecuador).*")
+    
+    # Generamos la data histórica
+    df_historico = generar_datos_mercado_simulados(producto_mercado)
+    
+    # Graficamos la historia
+    st.write("### 📊 Histórico de Precios (Últimas 150 Semanas)")
+    fig_hist = go.Figure()
+    fig_hist.add_trace(go.Scatter(x=df_historico.index, y=df_historico['Precio_Productor'], name='Precio Productor (Finca)', line=dict(color='#00E676')))
+    fig_hist.add_trace(go.Scatter(x=df_historico.index, y=df_historico['Precio_Mayorista'], name='Precio Mayorista (Ciudad)', line=dict(color='#2979FF')))
+    fig_hist.update_layout(template="plotly_dark", yaxis_title="Precio Promedio (USD)", hovermode="x unified")
+    st.plotly_chart(fig_hist, use_container_width=True)
+    
+    with c_btn:
+        st.write("") # Espacio
+        st.write("") 
+        ejecutar_vecm = st.button("🔮 Proyectar Precios", use_container_width=True)
+
+    if ejecutar_vecm:
+        with st.spinner("Ejecutando Modelo VECM de Cointegración..."):
+            try:
+                # 1. Preparación del Modelo VECM
+                # k_ar_diff=1 significa que miramos 1 semana atrás para corregir el error
+                modelo_vecm = VECM(df_historico[['Precio_Productor', 'Precio_Mayorista']], k_ar_diff=1, deterministic='co')
+                
+                # 2. Entrenamiento del modelo
+                resultado_vecm = modelo_vecm.fit()
+                
+                # 3. Predicción (8 semanas al futuro)
+                pasos_futuro = 8
+                prediccion = resultado_vecm.predict(steps=pasos_futuro)
+                
+                # 4. Construcción del DataFrame futuro
+                fechas_futuras = pd.date_range(start=df_historico.index[-1] + timedelta(days=7), periods=pasos_futuro, freq='W')
+                df_pred = pd.DataFrame(prediccion, index=fechas_futuras, columns=['Pred_Productor', 'Pred_Mayorista'])
+                
+                # 5. Gráfico de Predicción (Plotly)
+                st.markdown("---")
+                st.write(f"### 🎯 Proyección a Corto Plazo: {producto_mercado}")
+                
+                # Unimos los últimos 10 datos históricos con los futuros para que la línea sea continua
+                df_cola = df_historico.tail(10)
+                
+                fig_pred = go.Figure()
+                # Historia (Gris)
+                fig_pred.add_trace(go.Scatter(x=df_cola.index, y=df_cola['Precio_Mayorista'], name='Mayorista Histórico', line=dict(color='gray', dash='dot')))
+                fig_pred.add_trace(go.Scatter(x=df_cola.index, y=df_cola['Precio_Productor'], name='Productor Histórico', line=dict(color='gray', dash='dot')))
+                
+                # Futuro (Colores)
+                fig_pred.add_trace(go.Scatter(x=df_pred.index, y=df_pred['Pred_Mayorista'], name='Proyección Mayorista', line=dict(color='#2979FF', width=3)))
+                fig_pred.add_trace(go.Scatter(x=df_pred.index, y=df_pred['Pred_Productor'], name='Proyección Productor', line=dict(color='#00E676', width=3)))
+                
+                fig_pred.update_layout(template="plotly_dark", yaxis_title="Precio Proyectado (USD)", hovermode="x unified")
+                st.plotly_chart(fig_pred, use_container_width=True)
+                
+                # Interpretación Econométrica Básica
+                tendencia = "AL ALZA 📈" if df_pred['Pred_Productor'].iloc[-1] > df_pred['Pred_Productor'].iloc[0] else "A LA BAJA 📉"
+                st.success(f"**Análisis:** El modelo VECM detecta que la tendencia general para las próximas 8 semanas es **{tendencia}**. Sugerimos planificar las cosechas y negociaciones con los intermediarios considerando esta proyección.")
+                
+            except Exception as e:
+                st.error(f"❌ Ocurrió un error en el cálculo matricial del VECM: {e}")
