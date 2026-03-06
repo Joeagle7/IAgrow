@@ -8,3 +8,4 @@ plotly
 earthengine-api
 google-generativeai
 pillow
+statsmodels
