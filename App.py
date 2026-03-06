@@ -6,6 +6,7 @@ import requests
 from streamlit_geolocation import streamlit_geolocation
 import plotly.express as px
 import ee
+from datetime import datetime, timedelta
 
 # --- 1. CONFIGURACIÓN Y ESTADO DE MEMORIA ---
 st.set_page_config(page_title="AgroIA - Panel de Decisión", page_icon="🌾", layout="wide")
@@ -158,41 +159,60 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
     if not gee_activo:
         st.error("⚠️ Error: Google Earth Engine no está inicializado.")
     else:
-        with st.spinner("Procesando imágenes satelitales (Esto puede tardar unos segundos)..."):
+        with st.spinner("Buscando la fotografía satelital despejada más reciente..."):
             try:
                 punto = ee.Geometry.Point([st.session_state.lon, st.session_state.lat])
                 
-                imagen_sentinel = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED") \
+                # 1. Buscamos en los últimos 6 meses para garantizar encontrar una foto sin nubes
+                fecha_fin = datetime.today().strftime('%Y-%m-%d')
+                fecha_inicio = (datetime.today() - timedelta(days=180)).strftime('%Y-%m-%d')
+                
+                # 2. Filtramos y ORDENAMOS de la más reciente a la más antigua
+                coleccion = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED") \
                     .filterBounds(punto) \
-                    .filterDate('2023-06-01', '2024-01-01') \
-                    .median() 
+                    .filterDate(fecha_inicio, fecha_fin) \
+                    .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20)) \
+                    .sort('system:time_start', False) 
                 
-                ndvi = imagen_sentinel.normalizedDifference(['B8', 'B4']).rename('NDVI')
-                vis_params = {'min': 0.1, 'max': 0.6, 'palette': ['#d73027', '#f46d43', '#fdae61', '#fee08b', '#d9ef8b', '#a6d96a', '#66bd63', '#1a9850']}
-                map_id_dict = ee.Image(ndvi).getMapId(vis_params)
-                
-                # LA SOLUCIÓN AL ZOOM: Añadimos max_zoom=20 al mapa principal
-                m_ndvi = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=15, max_zoom=20)
-                
-                folium.TileLayer(
-                    tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                    attr='Esri', name='Satélite Base', overlay=False, max_zoom=20
-                ).add_to(m_ndvi)
-                
-                # El truco: max_native_zoom=16 le dice a Folium que estire la imagen si el usuario se acerca mucho
-                folium.TileLayer(
-                    tiles=map_id_dict['tile_fetcher'].url_format, attr='Google Earth Engine', 
-                    name='NDVI', overlay=True, opacity=0.7, max_zoom=20, max_native_zoom=16
-                ).add_to(m_ndvi)
-                
-                folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="red")).add_to(m_ndvi)
-                
-                st_folium(m_ndvi, width=900, height=500, key="mapa_ndvi")
-                
-                st.info("💡 **Interpretación Agronómica:** Las zonas en **Verde Oscuro** indican cultivos sanos. Zonas **Amarillo/Naranja** señalan estrés. Zonas **Rojo** representan suelo desnudo o infraestructura.")
+                # Verificamos si hay al menos una imagen disponible
+                if coleccion.size().getInfo() == 0:
+                    st.warning("☁️ Demasiada nubosidad en los últimos meses. No se encontró una imagen satelital clara reciente para esta coordenada.")
+                else:
+                    # 3. Tomamos SOLO la imagen más reciente
+                    imagen_sentinel = coleccion.first()
+                    
+                    # 4. EXTRACCIÓN DE LA FECHA EXACTA DE CAPTURA
+                    fecha_milisegundos = imagen_sentinel.get('system:time_start').getInfo()
+                    # Convertimos el formato de máquina a una fecha legible
+                    fecha_captura = datetime.fromtimestamp(fecha_milisegundos / 1000.0).strftime('%d de %B de %Y')
+                    
+                    # 5. Mostramos el aviso crucial para el agricultor ANTES del mapa
+                    st.info(f"📸 **Fecha de avistamiento satelital:** La imagen que verá a continuación fue capturada el **{fecha_captura}**.\n\n*⚠️ Tenga en cuenta: Si usted realizó siembras, podas o aplicó fertilizantes después de esta fecha, el mapa reflejará el estado anterior de su parcela.*")
+                    
+                    # Calculamos el NDVI y aplicamos la paleta de colores calibrada
+                    ndvi = imagen_sentinel.normalizedDifference(['B8', 'B4']).rename('NDVI')
+                    vis_params = {'min': 0.1, 'max': 0.6, 'palette': ['#d73027', '#f46d43', '#fdae61', '#fee08b', '#d9ef8b', '#a6d96a', '#66bd63', '#1a9850']}
+                    map_id_dict = ee.Image(ndvi).getMapId(vis_params)
+                    
+                    # Renderizamos el mapa
+                    m_ndvi = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=15, max_zoom=20)
+                    
+                    folium.TileLayer(
+                        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                        attr='Esri', name='Satélite Base', overlay=False, max_zoom=20
+                    ).add_to(m_ndvi)
+                    
+                    folium.TileLayer(
+                        tiles=map_id_dict['tile_fetcher'].url_format, attr='Google Earth Engine', 
+                        name='NDVI', overlay=True, opacity=0.7, max_zoom=20, max_native_zoom=16
+                    ).add_to(m_ndvi)
+                    
+                    folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="red")).add_to(m_ndvi)
+                    
+                    st_folium(m_ndvi, width=900, height=500, key="mapa_ndvi")
+                    
+                    st.success("✅ Interpretación: Verde Oscuro (Cultivo Sano), Amarillo/Naranja (Estrés), Rojo (Suelo desnudo/Infraestructura).")
+                    
             except Exception as e:
                 st.error(f"❌ Ocurrió un error al extraer los datos satelitales: {e}")
-
-
-
 
