@@ -44,16 +44,8 @@ def inicializar_google_earth_engine():
         return False
 
 gee_activo = inicializar_google_earth_engine()
-st.markdown("### Opción B: Seleccionar en el Mapa Interactivo")
-    st.write("Haga **clic** sobre su parcela. El marcador rojo se moverá exactamente a su selección.")
-    
-    # Asegúrese de que estas 3 líneas tengan exactamente la misma sangría que las de arriba
-    m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=13)
-    folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="red", icon="info-sign")).add_to(m)
-    
-    output = st_folium(m, width=900, height=500, key="mapa_principal", returned_objects=["last_clicked"])
-
-    if output and output.get('last_clicked'):
+st.markdown("""<style>.stMetric { background: rgba(255, 255, 255, 0.05); border-radius: 5px; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.1); }</style>""", unsafe_allow_html=True)
+st.title("🌾 AgroIA: Plataforma Inteligente de Decisión Agrícola")
 
 # --- 2. BARRA LATERAL ---
 st.sidebar.header("🕹️ Coordenadas Activas")
@@ -100,7 +92,7 @@ if opcion_menu == "Menú Principal (Mapa)":
     st.markdown("### Opción B: Seleccionar en el Mapa Interactivo")
     st.write("Haga **clic** sobre su parcela. El marcador rojo se moverá exactamente a su selección.")
     
-m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=13)
+    m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=13)
     folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="red", icon="info-sign")).add_to(m)
     
     output = st_folium(m, width=900, height=500, key="mapa_principal", returned_objects=["last_clicked"])
@@ -139,11 +131,9 @@ elif opcion_menu == "Análisis Suelo":
     json_suelo = obtener_datos_suelo(st.session_state.lat, st.session_state.lon)
     
     if json_suelo and 'properties' in json_suelo:
-        # LA SOLUCIÓN AL ERROR: Función "amortiguador" para datos vacíos (None)
         def extraer_dato(json_data, capa_idx, prof_idx):
             try:
                 valor = json_data['properties']['layers'][capa_idx]['depths'][prof_idx]['values']['mean']
-                # Si hay valor, lo divide entre 10. Si es None, pone "Sin datos"
                 return round(valor / 10, 2) if valor is not None else "Sin datos"
             except:
                 return "Sin datos"
@@ -151,7 +141,6 @@ elif opcion_menu == "Análisis Suelo":
         c1, c2 = st.columns(2)
         with c1:
             st.write("**Capa Superficial (0-5cm)**")
-            # En SoilGrids: La capa 1 es pH, la capa 2 es Nitrógeno
             st.metric("pH", extraer_dato(json_suelo, 1, 0))
             st.metric("Nitrógeno (cg/kg)", extraer_dato(json_suelo, 2, 0))
         with c2:
@@ -171,38 +160,29 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
             try:
                 punto = ee.Geometry.Point([st.session_state.lon, st.session_state.lat])
                 
-                # 1. Buscamos en los últimos 6 meses para garantizar encontrar una foto sin nubes
                 fecha_fin = datetime.today().strftime('%Y-%m-%d')
                 fecha_inicio = (datetime.today() - timedelta(days=180)).strftime('%Y-%m-%d')
                 
-                # 2. Filtramos y ORDENAMOS de la más reciente a la más antigua
                 coleccion = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED") \
                     .filterBounds(punto) \
                     .filterDate(fecha_inicio, fecha_fin) \
                     .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20)) \
                     .sort('system:time_start', False) 
                 
-                # Verificamos si hay al menos una imagen disponible
                 if coleccion.size().getInfo() == 0:
                     st.warning("☁️ Demasiada nubosidad en los últimos meses. No se encontró una imagen satelital clara reciente para esta coordenada.")
                 else:
-                    # 3. Tomamos SOLO la imagen más reciente
                     imagen_sentinel = coleccion.first()
                     
-                    # 4. EXTRACCIÓN DE LA FECHA EXACTA DE CAPTURA
                     fecha_milisegundos = imagen_sentinel.get('system:time_start').getInfo()
-                    # Convertimos el formato de máquina a una fecha legible
                     fecha_captura = datetime.fromtimestamp(fecha_milisegundos / 1000.0).strftime('%d de %B de %Y')
                     
-                    # 5. Mostramos el aviso crucial para el agricultor ANTES del mapa
                     st.info(f"📸 **Fecha de avistamiento satelital:** La imagen que verá a continuación fue capturada el **{fecha_captura}**.\n\n*⚠️ Tenga en cuenta: Si usted realizó siembras, podas o aplicó fertilizantes después de esta fecha, el mapa reflejará el estado anterior de su parcela.*")
                     
-                    # Calculamos el NDVI y aplicamos la paleta de colores calibrada
                     ndvi = imagen_sentinel.normalizedDifference(['B8', 'B4']).rename('NDVI')
                     vis_params = {'min': 0.1, 'max': 0.6, 'palette': ['#d73027', '#f46d43', '#fdae61', '#fee08b', '#d9ef8b', '#a6d96a', '#66bd63', '#1a9850']}
                     map_id_dict = ee.Image(ndvi).getMapId(vis_params)
                     
-                    # Renderizamos el mapa
                     m_ndvi = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=15, max_zoom=20)
                     
                     folium.TileLayer(
@@ -223,6 +203,3 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
                     
             except Exception as e:
                 st.error(f"❌ Ocurrió un error al extraer los datos satelitales: {e}")
-
-
-
