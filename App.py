@@ -16,19 +16,24 @@ if "lon" not in st.session_state: st.session_state.lon = -79.8862
 @st.cache_resource
 def inicializar_google_earth_engine():
     try:
-        # 1. Si la aplicación detecta que está en la Nube, usa el Secreto JSON
+        # 1. Si la aplicación detecta que está en la Nube
         if "EE_CREDENTIALS" in st.secrets:
             import json
             from google.oauth2 import service_account
             
-            # Ahora que el secreto tiene comillas simples ('''), json.loads funcionará perfectamente sin filtros raros.
+            # Leemos el archivo JSON que ya funciona bien
             creds_dict = json.loads(st.secrets["EE_CREDENTIALS"])
             
-            # Creamos las credenciales formales de Google
+            # Creamos la credencial base
             credentials = service_account.Credentials.from_service_account_info(creds_dict)
-            ee.Initialize(credentials)
             
-        # 2. Si está en su computadora local (localhost), usa la sesión que ya teníamos
+            # LA SOLUCIÓN: Le decimos a Google exactamente qué puerta queremos abrir
+            scoped_credentials = credentials.with_scopes(['https://www.googleapis.com/auth/earthengine'])
+            
+            # Inicializamos pasando la credencial con el permiso asignado
+            ee.Initialize(scoped_credentials)
+            
+        # 2. Si está en su computadora local (localhost)
         else:
             ee.Initialize()
             
@@ -38,7 +43,6 @@ def inicializar_google_earth_engine():
         return False
 
 gee_activo = inicializar_google_earth_engine()
-
 st.markdown("""<style>.stMetric { background: rgba(255, 255, 255, 0.05); border-radius: 5px; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.1); }</style>""", unsafe_allow_html=True)
 st.title("🌾 AgroIA: Plataforma Inteligente de Decisión Agrícola")
 
@@ -177,5 +181,6 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
             except Exception as e:
                 st.error(f"❌ Ocurrió un error al extraer los datos satelitales: {e}")            # Interpretación para el agricultor
             st.info("💡 **Interpretación Agronómica:** Las zonas en **Verde Oscuro** indican cultivos sanos y vigorosos. Las zonas en **Amarillo/Naranja** señalan estrés (falta de agua, plagas o deficiencia de nutrientes). Las zonas en **Rojo** representan suelo desnudo, infraestructura o plantas marchitas.")
+
 
 
