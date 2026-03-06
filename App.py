@@ -126,19 +126,34 @@ elif opcion_menu == "Forecast Clima":
         st.plotly_chart(px.line(df_hourly, x='Fecha_Hora', y=['Temp (°C)', 'Evapotranspiración (mm)'], template="plotly_dark", color_discrete_sequence=['#F0A500', '#0097A7']), use_container_width=True)
         st.plotly_chart(px.bar(df_hourly, x='Fecha_Hora', y='Prob_Lluvia (%)', template="plotly_dark", color_discrete_sequence=['#1565C0']), use_container_width=True)
 
+# ... (El código anterior de Menú Principal y Forecast Clima se queda igual) ...
+
 elif opcion_menu == "Análisis Suelo":
     st.subheader(f"🌍 Calidad Edafológica ({st.session_state.lat}, {st.session_state.lon})")
     json_suelo = obtener_datos_suelo(st.session_state.lat, st.session_state.lon)
+    
     if json_suelo and 'properties' in json_suelo:
+        # LA SOLUCIÓN AL ERROR: Función "amortiguador" para datos vacíos (None)
+        def extraer_dato(json_data, capa_idx, prof_idx):
+            try:
+                valor = json_data['properties']['layers'][capa_idx]['depths'][prof_idx]['values']['mean']
+                # Si hay valor, lo divide entre 10. Si es None, pone "Sin datos"
+                return round(valor / 10, 2) if valor is not None else "Sin datos"
+            except:
+                return "Sin datos"
+
         c1, c2 = st.columns(2)
         with c1:
             st.write("**Capa Superficial (0-5cm)**")
-            st.metric("pH", json_suelo['properties']['layers'][1]['depths'][0]['values']['mean'] / 10)
-            st.metric("Nitrógeno (cg/kg)", json_suelo['properties']['layers'][2]['depths'][0]['values']['mean'] / 10)
+            # En SoilGrids: La capa 1 es pH, la capa 2 es Nitrógeno
+            st.metric("pH", extraer_dato(json_suelo, 1, 0))
+            st.metric("Nitrógeno (cg/kg)", extraer_dato(json_suelo, 2, 0))
         with c2:
             st.write("**Capa Profunda (15-30cm)**")
-            st.metric("pH", json_suelo['properties']['layers'][1]['depths'][1]['values']['mean'] / 10)
-            st.metric("Nitrógeno (cg/kg)", json_suelo['properties']['layers'][2]['depths'][1]['values']['mean'] / 10)
+            st.metric("pH", extraer_dato(json_suelo, 1, 1))
+            st.metric("Nitrógeno (cg/kg)", extraer_dato(json_suelo, 2, 1))
+    else:
+        st.warning("⚠️ No se encontraron datos edafológicos para esta ubicación.")
 
 elif opcion_menu == "Mapa Satelital (NDVI)":
     st.subheader(f"🛰️ Análisis Satelital de Salud Vegetal (NDVI)")
@@ -150,37 +165,36 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
             try:
                 punto = ee.Geometry.Point([st.session_state.lon, st.session_state.lat])
                 
-                # SOLUCIÓN 2: Usamos una "mediana" de varios meses para garantizar que haya imagen sin importar las nubes
                 imagen_sentinel = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED") \
                     .filterBounds(punto) \
                     .filterDate('2023-06-01', '2024-01-01') \
                     .median() 
                 
                 ndvi = imagen_sentinel.normalizedDifference(['B8', 'B4']).rename('NDVI')
-                
                 vis_params = {'min': 0.0, 'max': 0.8, 'palette': ['#d73027', '#f46d43', '#fdae61', '#fee08b', '#d9ef8b', '#a6d96a', '#66bd63', '#1a9850']}
                 map_id_dict = ee.Image(ndvi).getMapId(vis_params)
                 
-                m_ndvi = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=14)
+                # LA SOLUCIÓN AL ZOOM: Añadimos max_zoom=20 al mapa principal
+                m_ndvi = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=15, max_zoom=20)
                 
                 folium.TileLayer(
                     tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                    attr='Esri', name='Satélite Base', overlay=False
+                    attr='Esri', name='Satélite Base', overlay=False, max_zoom=20
                 ).add_to(m_ndvi)
                 
+                # El truco: max_native_zoom=16 le dice a Folium que estire la imagen si el usuario se acerca mucho
                 folium.TileLayer(
                     tiles=map_id_dict['tile_fetcher'].url_format, attr='Google Earth Engine', 
-                    name='NDVI', overlay=True, opacity=0.7
+                    name='NDVI', overlay=True, opacity=0.7, max_zoom=20, max_native_zoom=16
                 ).add_to(m_ndvi)
                 
                 folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="red")).add_to(m_ndvi)
                 
                 st_folium(m_ndvi, width=900, height=500, key="mapa_ndvi")
                 
-                st.success("✅ Imagen procesada exitosamente.")
+                st.info("💡 **Interpretación Agronómica:** Las zonas en **Verde Oscuro** indican cultivos sanos. Zonas **Amarillo/Naranja** señalan estrés. Zonas **Rojo** representan suelo desnudo o infraestructura.")
             except Exception as e:
-                st.error(f"❌ Ocurrió un error al extraer los datos satelitales: {e}")            # Interpretación para el agricultor
-            st.info("💡 **Interpretación Agronómica:** Las zonas en **Verde Oscuro** indican cultivos sanos y vigorosos. Las zonas en **Amarillo/Naranja** señalan estrés (falta de agua, plagas o deficiencia de nutrientes). Las zonas en **Rojo** representan suelo desnudo, infraestructura o plantas marchitas.")
+                st.error(f"❌ Ocurrió un error al extraer los datos satelitales: {e}")
 
 
 
