@@ -6,3 +6,4 @@ requests
 streamlit-geolocation
 plotly
 earthengine-api
+datetime-timedelta
