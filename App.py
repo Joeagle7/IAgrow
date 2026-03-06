@@ -92,11 +92,11 @@ if opcion_menu == "Menú Principal (Mapa)":
     st.markdown("### Opción B: Seleccionar en el Mapa Interactivo")
     st.write("Haga **clic** sobre su parcela. El marcador rojo se moverá exactamente a su selección.")
     
-    m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=13)
+m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=13)
     folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="red", icon="info-sign")).add_to(m)
     
-    output = st_folium(m, width=900, height=500, key="mapa_principal")
-    
+    output = st_folium(m, width=900, height=500, key="mapa_principal", returned_objects=["last_clicked"])
+
     if output and output.get('last_clicked'):
         click_lat = round(output['last_clicked']['lat'], 4)
         click_lon = round(output['last_clicked']['lng'], 4)
@@ -215,4 +215,5 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
                     
             except Exception as e:
                 st.error(f"❌ Ocurrió un error al extraer los datos satelitales: {e}")
+
 
