@@ -94,7 +94,6 @@ if opcion_menu == "Menú Principal (Mapa)":
     m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=13)
     folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="red", icon="info-sign")).add_to(m)
     
-    # SOLUCIÓN 1: Renderizamos el mapa SIN el popup blanco que interfería
     output = st_folium(m, width=900, height=500, key="mapa_principal")
     
     if output and output.get('last_clicked'):
@@ -125,8 +124,6 @@ elif opcion_menu == "Forecast Clima":
         
         st.plotly_chart(px.line(df_hourly, x='Fecha_Hora', y=['Temp (°C)', 'Evapotranspiración (mm)'], template="plotly_dark", color_discrete_sequence=['#F0A500', '#0097A7']), use_container_width=True)
         st.plotly_chart(px.bar(df_hourly, x='Fecha_Hora', y='Prob_Lluvia (%)', template="plotly_dark", color_discrete_sequence=['#1565C0']), use_container_width=True)
-
-# ... (El código anterior de Menú Principal y Forecast Clima se queda igual) ...
 
 elif opcion_menu == "Análisis Suelo":
     st.subheader(f"🌍 Calidad Edafológica ({st.session_state.lat}, {st.session_state.lon})")
@@ -171,7 +168,7 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
                     .median() 
                 
                 ndvi = imagen_sentinel.normalizedDifference(['B8', 'B4']).rename('NDVI')
-                vis_params = {'min': 0.0, 'max': 0.8, 'palette': ['#d73027', '#f46d43', '#fdae61', '#fee08b', '#d9ef8b', '#a6d96a', '#66bd63', '#1a9850']}
+                vis_params = {'min': 0.1, 'max': 0.6, 'palette': ['#d73027', '#f46d43', '#fdae61', '#fee08b', '#d9ef8b', '#a6d96a', '#66bd63', '#1a9850']}
                 map_id_dict = ee.Image(ndvi).getMapId(vis_params)
                 
                 # LA SOLUCIÓN AL ZOOM: Añadimos max_zoom=20 al mapa principal
@@ -195,6 +192,7 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
                 st.info("💡 **Interpretación Agronómica:** Las zonas en **Verde Oscuro** indican cultivos sanos. Zonas **Amarillo/Naranja** señalan estrés. Zonas **Rojo** representan suelo desnudo o infraestructura.")
             except Exception as e:
                 st.error(f"❌ Ocurrió un error al extraer los datos satelitales: {e}")
+
 
 
 
