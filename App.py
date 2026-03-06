@@ -17,28 +17,27 @@ st.set_page_config(page_title="AgroIA - Panel de Decisión", page_icon="🌾", l
 if "lat" not in st.session_state: st.session_state.lat = -2.1962
 if "lon" not in st.session_state: st.session_state.lon = -79.8862
 
+# --- INICIALIZACIÓN DE GOOGLE EARTH ENGINE ---
 @st.cache_resource
 def inicializar_google_earth_engine():
     try:
-        # 1. Si la aplicación detecta que está en la Nube
         if "EE_CREDENTIALS" in st.secrets:
             import json
             from google.oauth2 import service_account
-            
-            # Leemos el archivo JSON que ya funciona bien
             creds_dict = json.loads(st.secrets["EE_CREDENTIALS"])
-            
-            # Creamos la credencial base
             credentials = service_account.Credentials.from_service_account_info(creds_dict)
-            
-            # LA SOLUCIÓN: Le decimos a Google exactamente qué puerta queremos abrir
             scoped_credentials = credentials.with_scopes(['https://www.googleapis.com/auth/earthengine'])
-            
-            # Inicializamos pasando la credencial con el permiso asignado
             ee.Initialize(scoped_credentials)
-            
-        # 2. Si está en su computadora local (localhost)
-        # --- CONFIGURACIÓN DE GEMINI API ---
+        else:
+            ee.Initialize()
+        return True
+    except Exception as e:
+        st.error(f"⚠️ Detalle técnico del fallo satelital: {e}")
+        return False
+
+gee_activo = inicializar_google_earth_engine()
+
+# --- CONFIGURACIÓN DE GEMINI API (AHORA EN EL LUGAR CORRECTO) ---
 try:
     if "GEMINI_API_KEY" in st.secrets:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
@@ -47,15 +46,7 @@ try:
         gemini_activo = False
 except Exception as e:
     gemini_activo = False
-        else:
-            ee.Initialize()
-            
-        return True
-    except Exception as e:
-        st.error(f"⚠️ Detalle técnico del fallo satelital: {e}")
-        return False
 
-gee_activo = inicializar_google_earth_engine()
 st.markdown("""<style>.stMetric { background: rgba(255, 255, 255, 0.05); border-radius: 5px; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.1); }</style>""", unsafe_allow_html=True)
 st.title("🌾 AgroIA: Plataforma Inteligente de Decisión Agrícola")
 
@@ -69,7 +60,7 @@ if nuevo_lat != st.session_state.lat or nuevo_lon != st.session_state.lon:
     st.rerun()
 
 st.sidebar.markdown("---")
-opcion_menu = st.sidebar.radio("📋 Ir a:", ["Menú Principal (Mapa)", "Forecast Clima", "Análisis Suelo", "Mapa Satelital (NDVI)"])
+opcion_menu = st.sidebar.radio("📋 Ir a:", ["Menú Principal (Mapa)", "Forecast Clima", "Análisis Suelo", "Mapa Satelital (NDVI)", "Diagnóstico IA 🤖"])
 
 # --- FUNCIONES DE CLIMA Y SUELO ---
 def grados_a_direccion(grados):
@@ -172,18 +163,14 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
             try:
                 punto = ee.Geometry.Point([st.session_state.lon, st.session_state.lat])
                 
-                # 1. Ventana de tiempo (últimos 90 días para garantizar datos en invierno)
                 fecha_fin = datetime.today()
                 fecha_inicio = fecha_fin - timedelta(days=90)
                 
-                # 2. EL BISTURÍ DIGITAL: Función para borrar nubes píxel por píxel
                 def enmascarar_nubes(imagen):
-                    qa = imagen.select('QA60') # Banda de calidad del satélite
-                    # Los bits 10 y 11 detectan nubes opacas y cirros translúcidos
+                    qa = imagen.select('QA60') 
                     mascara = qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0))
                     return imagen.updateMask(mascara)
                 
-                # 3. Descargamos las fotos, borramos las nubes y fusionamos lo limpio (median)
                 coleccion = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED") \
                     .filterBounds(punto) \
                     .filterDate(fecha_inicio.strftime('%Y-%m-%d'), fecha_fin.strftime('%Y-%m-%d')) \
@@ -192,15 +179,12 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
                 if coleccion.size().getInfo() == 0:
                     st.warning("☁️ Cobertura nubosa total y permanente. No hay datos útiles en este trimestre.")
                 else:
-                    # Fusionamos la colección en una sola imagen perfecta
                     imagen_limpia = coleccion.median()
                     
-                    # 4. Mensaje de transparencia para el usuario
                     f_inicio_str = fecha_inicio.strftime('%d de %b de %Y')
                     f_fin_str = fecha_fin.strftime('%d de %b de %Y')
                     st.info(f"🧩 **Mosaico Satelital de Invierno:** Debido a la nubosidad, esta imagen es una fusión de los píxeles más despejados capturados entre el **{f_inicio_str} y el {f_fin_str}**. Muestra la tendencia de salud más reciente de su cultivo.")
                     
-                    # Calculamos el NDVI
                     ndvi = imagen_limpia.normalizedDifference(['B8', 'B4']).rename('NDVI')
                     vis_params = {'min': 0.1, 'max': 0.6, 'palette': ['#d73027', '#f46d43', '#fdae61', '#fee08b', '#d9ef8b', '#a6d96a', '#66bd63', '#1a9850']}
                     map_id_dict = ee.Image(ndvi).getMapId(vis_params)
@@ -225,10 +209,10 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
                     
             except Exception as e:
                 st.error(f"❌ Ocurrió un error al extraer los datos satelitales: {e}")
+
 elif opcion_menu == "Diagnóstico IA 🤖":
     st.subheader("🤖 Diagnóstico Fitosanitario Asistido por IA")
     
-    # LIMITACIONES Y RESPONSABILIDAD (Como usted solicitó)
     st.warning("""
     **⚠️ Aviso Legal y Limitaciones del Sistema:**
     * **Probabilidad, no certeza:** Los resultados de esta Inteligencia Artificial son probabilísticos y **pueden contener errores**. No determinan una certeza absoluta.
@@ -242,7 +226,6 @@ elif opcion_menu == "Diagnóstico IA 🤖":
     
     st.markdown("---")
     
-    # FORMULARIO DE CONTEXTO (Añadidas sus sugerencias)
     c1, c2, c3 = st.columns(3)
     with c1:
         cultivo_seleccionado = st.selectbox("🌱 Cultivo", ["Cacao", "Banano", "Arroz", "Maíz", "Otro"])
@@ -263,7 +246,6 @@ elif opcion_menu == "Diagnóstico IA 🤖":
         sintomas_texto = st.text_area("✍️ Describa detalladamente el problema:", placeholder="Ej: Manchas amarillas con bordes secos...")
         
     with c5:
-        # DEPENDENCIA DE ENTRADA (Como usted solicitó)
         st.error("**📸 Dependencia de Entrada:** Es probable que si las fotos tienen mala calidad, están borrosas o mal iluminadas, el programa infravalore la imagen y entregue un diagnóstico incorrecto.")
         foto_planta = st.file_uploader("Subir foto clara del problema", type=['jpg', 'jpeg', 'png'])
         
