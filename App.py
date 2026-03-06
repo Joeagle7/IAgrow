@@ -13,11 +13,16 @@ st.set_page_config(page_title="AgroIA - Panel de Decisión", page_icon="🌾", l
 if "lat" not in st.session_state: st.session_state.lat = -2.1962
 if "lon" not in st.session_state: st.session_state.lon = -79.8862
 
-try:
-    ee.Initialize()
-    gee_activo = True
-except Exception as e:
-    gee_activo = False
+@st.cache_resource
+def inicializar_google_earth_engine():
+    try:
+        ee.Initialize()
+        return True
+    except Exception as e:
+        return False
+
+# Llamamos a la función. Streamlit recordará el resultado al instante en los próximos clics.
+gee_activo = inicializar_google_earth_engine()
 
 st.markdown("""<style>.stMetric { background: rgba(255, 255, 255, 0.05); border-radius: 5px; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.1); }</style>""", unsafe_allow_html=True)
 st.title("🌾 AgroIA: Plataforma Inteligente de Decisión Agrícola")
@@ -157,4 +162,5 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
             except Exception as e:
                 st.error(f"❌ Ocurrió un error al extraer los datos satelitales: {e}")            # Interpretación para el agricultor
             st.info("💡 **Interpretación Agronómica:** Las zonas en **Verde Oscuro** indican cultivos sanos y vigorosos. Las zonas en **Amarillo/Naranja** señalan estrés (falta de agua, plagas o deficiencia de nutrientes). Las zonas en **Rojo** representan suelo desnudo, infraestructura o plantas marchitas.")
+
 
