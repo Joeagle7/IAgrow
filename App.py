@@ -7,6 +7,9 @@ from streamlit_geolocation import streamlit_geolocation
 import plotly.express as px
 import ee
 from datetime import datetime, timedelta
+import google.generativeai as genai
+from PIL import Image
+import io
 
 # --- 1. CONFIGURACIÓN Y ESTADO DE MEMORIA ---
 st.set_page_config(page_title="AgroIA - Panel de Decisión", page_icon="🌾", layout="wide")
@@ -35,6 +38,15 @@ def inicializar_google_earth_engine():
             ee.Initialize(scoped_credentials)
             
         # 2. Si está en su computadora local (localhost)
+        # --- CONFIGURACIÓN DE GEMINI API ---
+try:
+    if "GEMINI_API_KEY" in st.secrets:
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        gemini_activo = True
+    else:
+        gemini_activo = False
+except Exception as e:
+    gemini_activo = False
         else:
             ee.Initialize()
             
@@ -213,3 +225,55 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
                     
             except Exception as e:
                 st.error(f"❌ Ocurrió un error al extraer los datos satelitales: {e}")
+elif opcion_menu == "Diagnóstico IA 🤖":
+    st.subheader("🤖 Diagnóstico Fitosanitario Asistido por IA")
+    
+    # LIMITACIONES Y RESPONSABILIDAD (Como usted solicitó)
+    st.warning("""
+    **⚠️ Aviso Legal y Limitaciones del Sistema:**
+    * **Probabilidad, no certeza:** Los resultados de esta Inteligencia Artificial son probabilísticos y **pueden contener errores**. No determinan una certeza absoluta.
+    * **Responsabilidad y Sostenibilidad:** Priorizamos el uso de herramientas sostenibles con el medio ambiente. Sin embargo, usted **siempre debe verificar** este pre-diagnóstico con un ingeniero agrónomo o técnico de campo antes de aplicar cualquier tratamiento o agroquímico.
+    """)
+    
+    st.info("""
+    **📖 Manual de Uso:**
+    Llene los datos de su parcela con la mayor precisión posible. El contexto (riego, altitud, clima) es vital para que la IA entienda su entorno.
+    """)
+    
+    st.markdown("---")
+    
+    # FORMULARIO DE CONTEXTO (Añadidas sus sugerencias)
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        cultivo_seleccionado = st.selectbox("🌱 Cultivo", ["Cacao", "Banano", "Arroz", "Maíz", "Otro"])
+        if cultivo_seleccionado == "Otro":
+            cultivo_seleccionado = st.text_input("Especifique su cultivo:")
+    with c2:
+        area_terreno = st.number_input("📏 Área (Hectáreas)", min_value=0.1, value=1.0, step=0.5)
+        altitud = st.number_input("⛰️ Altitud (m.s.n.m)", min_value=0, value=100, step=50)
+    with c3:
+        tipo_riego = st.selectbox("💧 Tipo de Riego", ["Secano (Solo lluvia)", "Goteo", "Aspersión", "Gravedad/Inundación", "Cuenca/Río cercano"])
+
+    st.markdown("---")
+    
+    c4, c5 = st.columns(2)
+    with c4:
+        parte_afectada = st.selectbox("🍂 Parte afectada", ["Hojas", "Tallo o Tronco", "Fruto o Espiga", "Raíz", "Toda la planta"])
+        dias_sintomas = st.slider("⏱️ Días con síntomas", 1, 30, 5)
+        sintomas_texto = st.text_area("✍️ Describa detalladamente el problema:", placeholder="Ej: Manchas amarillas con bordes secos...")
+        
+    with c5:
+        # DEPENDENCIA DE ENTRADA (Como usted solicitó)
+        st.error("**📸 Dependencia de Entrada:** Es probable que si las fotos tienen mala calidad, están borrosas o mal iluminadas, el programa infravalore la imagen y entregue un diagnóstico incorrecto.")
+        foto_planta = st.file_uploader("Subir foto clara del problema", type=['jpg', 'jpeg', 'png'])
+        
+        if foto_planta is not None:
+            st.image(foto_planta, caption="Imagen cargada para análisis", use_container_width=True)
+
+    if st.button("🧠 Analizar Cultivo con IA", use_container_width=True):
+        if not gemini_activo:
+            st.error("⚠️ La API de Gemini no está configurada en los Secretos.")
+        elif len(sintomas_texto) < 10 and not foto_planta:
+            st.warning("⚠️ Por favor, describa el problema o suba una fotografía clara.")
+        else:
+            st.success("✅ Datos recibidos. Listo para programar el 'Prompt' de análisis.")
