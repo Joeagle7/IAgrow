@@ -156,30 +156,40 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
     if not gee_activo:
         st.error("⚠️ Error: Google Earth Engine no está inicializado.")
     else:
-        with st.spinner("Buscando la fotografía satelital despejada más reciente..."):
+        with st.spinner("Procesando mosaico satelital libre de nubes (Algoritmo QA60)..."):
             try:
                 punto = ee.Geometry.Point([st.session_state.lon, st.session_state.lat])
                 
-                fecha_fin = datetime.today().strftime('%Y-%m-%d')
-                fecha_inicio = (datetime.today() - timedelta(days=180)).strftime('%Y-%m-%d')
+                # 1. Ventana de tiempo (últimos 90 días para garantizar datos en invierno)
+                fecha_fin = datetime.today()
+                fecha_inicio = fecha_fin - timedelta(days=90)
                 
+                # 2. EL BISTURÍ DIGITAL: Función para borrar nubes píxel por píxel
+                def enmascarar_nubes(imagen):
+                    qa = imagen.select('QA60') # Banda de calidad del satélite
+                    # Los bits 10 y 11 detectan nubes opacas y cirros translúcidos
+                    mascara = qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0))
+                    return imagen.updateMask(mascara)
+                
+                # 3. Descargamos las fotos, borramos las nubes y fusionamos lo limpio (median)
                 coleccion = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED") \
                     .filterBounds(punto) \
-                    .filterDate(fecha_inicio, fecha_fin) \
-                    .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20)) \
-                    .sort('system:time_start', False) 
+                    .filterDate(fecha_inicio.strftime('%Y-%m-%d'), fecha_fin.strftime('%Y-%m-%d')) \
+                    .map(enmascarar_nubes) 
                 
                 if coleccion.size().getInfo() == 0:
-                    st.warning("☁️ Demasiada nubosidad en los últimos meses. No se encontró una imagen satelital clara reciente para esta coordenada.")
+                    st.warning("☁️ Cobertura nubosa total y permanente. No hay datos útiles en este trimestre.")
                 else:
-                    imagen_sentinel = coleccion.first()
+                    # Fusionamos la colección en una sola imagen perfecta
+                    imagen_limpia = coleccion.median()
                     
-                    fecha_milisegundos = imagen_sentinel.get('system:time_start').getInfo()
-                    fecha_captura = datetime.fromtimestamp(fecha_milisegundos / 1000.0).strftime('%d de %B de %Y')
+                    # 4. Mensaje de transparencia para el usuario
+                    f_inicio_str = fecha_inicio.strftime('%d de %b de %Y')
+                    f_fin_str = fecha_fin.strftime('%d de %b de %Y')
+                    st.info(f"🧩 **Mosaico Satelital de Invierno:** Debido a la nubosidad, esta imagen es una fusión de los píxeles más despejados capturados entre el **{f_inicio_str} y el {f_fin_str}**. Muestra la tendencia de salud más reciente de su cultivo.")
                     
-                    st.info(f"📸 **Fecha de avistamiento satelital:** La imagen que verá a continuación fue capturada el **{fecha_captura}**.\n\n*⚠️ Tenga en cuenta: Si usted realizó siembras, podas o aplicó fertilizantes después de esta fecha, el mapa reflejará el estado anterior de su parcela.*")
-                    
-                    ndvi = imagen_sentinel.normalizedDifference(['B8', 'B4']).rename('NDVI')
+                    # Calculamos el NDVI
+                    ndvi = imagen_limpia.normalizedDifference(['B8', 'B4']).rename('NDVI')
                     vis_params = {'min': 0.1, 'max': 0.6, 'palette': ['#d73027', '#f46d43', '#fdae61', '#fee08b', '#d9ef8b', '#a6d96a', '#66bd63', '#1a9850']}
                     map_id_dict = ee.Image(ndvi).getMapId(vis_params)
                     
