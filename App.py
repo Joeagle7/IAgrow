@@ -245,7 +245,46 @@ elif opcion_menu == "Diagnóstico IA 🤖":
         foto_planta = st.file_uploader("📸 Subir foto clara del problema", type=['jpg', 'jpeg', 'png'])
         if foto_planta is not None: st.image(foto_planta, use_container_width=True)
 
-    if st.button("🧠 Analizar Cultivo con IA", use_container_width=True):
-        if not gemini_activo: st.error("⚠️ La API de Gemini no está configurada.")
-        elif len(sintomas_texto) < 10 and not foto_planta: st.warning("⚠️ Describa el problema o suba una foto.")
-        else: st.success("✅ Datos listos para el Prompt.")
+# 2. EL PROMPT ESTRUCTURADO Y AVANZADO
+                    prompt_experto = f"""
+                    Eres un sistema experto en agronomía tropical y fitopatología.
+                    Tu tarea es analizar el siguiente caso y proporcionar un diagnóstico estructurado.
+
+                    CONTEXTO ACTUAL DEL LOTE:
+                    - Cultivo: {cultivo_seleccionado}
+                    - Edad del cultivo: {dias_siembra} días desde la siembra.
+                    - Área: {area_terreno} {unidad_area}
+                    - Altitud: {elevacion_actual} m.s.n.m.
+                    - Riego: {tipo_riego}
+                    - Clima reciente: {clima_texto}
+
+                    SÍNTOMAS REPORTADOS POR EL AGRICULTOR:
+                    - Órgano afectado: {parte_afectada}
+                    - Días con síntomas: {dias_sintomas} días
+                    - Descripción: {sintomas_texto}
+
+                    INSTRUCCIONES DE RAZONAMIENTO (Chain-of-Thought):
+                    Antes de dar el diagnóstico, redacta un breve "Análisis Técnico" donde relaciones la edad del cultivo ({dias_siembra} días), el clima ({clima_texto}) y los síntomas. Evalúa si el problema es biótico (plaga/enfermedad) o abiótico (clima/nutrientes).
+
+                    PROTOCOLO DE SALIDA ESTRICTO (Usa Markdown):
+                    Debes responder SIEMPRE en este formato exacto:
+
+                    **🔬 ANÁLISIS TÉCNICO:**
+                    [Tu razonamiento paso a paso conectando clima, altitud, edad y síntomas]
+
+                    **🚨 DIAGNÓSTICO PRELIMINAR:**
+                    [Enumerar 2-3 causas probables, ordenadas por probabilidad. Usa nombres científicos y comunes]
+
+                    **📋 RECOMENDACIONES DE MANEJO:**
+                    1. **Inmediatas (0-24h):** [Acciones urgentes de control cultural/biológico]
+                    2. **Corto plazo (1-7 días):** [Tratamientos específicos sugeridos. Si sugieres químicos, menciona solo el INGREDIENTE ACTIVO y ordena leer la etiqueta comercial para la dosis]
+                    3. **Preventivas:** [Manejo agronómico para evitar reincidencia]
+
+                    **⚠️ NIVEL DE URGENCIA:** [Bajo / Medio / Alto / Crítico]
+
+                    RESTRICCIONES CRÍTICAS:
+                    - Prioriza diagnósticos diferenciales.
+                    - NUNCA recomiendes productos prohibidos en Ecuador/Sudamérica.
+                    - Advierte al final que este es un pre-diagnóstico de IA y requiere validación de un agrónomo certificado en campo.
+                    Responde en español técnico pero accesible para un agricultor con educación secundaria.
+                    """
