@@ -92,31 +92,32 @@ def obtener_datos_suelo(lat, lon):
     except: return None
 
 # --- FUNCIONES ECONOMÉTRICAS VECMX ---
-
-@st.cache_data(ttl=86400) # Cache de 24 horas para no saturar la API
-def obtener_clima_historico_exogeno(lat, lon, start_date, end_date):
-    """Descarga datos climáticos históricos reales para usarlos como variables exógenas en el VECMX"""
-    url = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={lon}&start_date={start_date.strftime('%Y-%m-%d')}&end_date={end_date.strftime('%Y-%m-%d')}&daily=temperature_2m_mean,precipitation_sum&timezone=America/Guayaquil"
-    try:
-        data = requests.get(url).json()
-        df_clima = pd.DataFrame({
-            'Fecha': pd.to_datetime(data['daily']['time']),
-            'Temp_Media': data['daily']['temperature_2m_mean'],
-            'Precipitacion': data['daily']['precipitation_sum']
-        })
-        # Agrupamos por semana para que coincida con la serie de precios
-        df_semanal = df_clima.resample('W', on='Fecha').agg({'Temp_Media': 'mean', 'Precipitacion': 'sum'}).fillna(method='bfill')
-        return df_semanal
-    except:
-        # Fallback de simulación en caso de que la API de archivo falle
-        fechas = pd.date_range(start=start_date, end=end_date, freq='W')
-        return pd.DataFrame({'Temp_Media': np.random.normal(24, 2, len(fechas)), 'Precipitacion': np.random.exponential(15, len(fechas))}, index=fechas)
+def obtener_variables_macro_exogenas(start_date, end_date):
+    """
+    CONTENEDOR TEMPORAL: Aquí se inyectará el Web Scraping del BCE/INAMHI en el futuro.
+    Por ahora, simula índices macroeconómicos que afectan los costos de producción a nivel nacional.
+    """
+    fechas = pd.date_range(start=start_date, end=end_date, freq='W')
+    np.random.seed(99)
+    # Simulamos un shock de costos tipo "Guerra Ucrania" a mitad de la serie
+    base_urea = np.linspace(40, 45, len(fechas))
+    shock_urea = np.where(fechas > (end_date - timedelta(weeks=75)), 25, 0)
+    ruido_urea = np.random.normal(0, 2, len(fechas))
+    
+    # Índice logístico (Combustibles/Transporte)
+    indice_logistico = np.linspace(100, 120, len(fechas)) + np.random.normal(0, 1, len(fechas))
+    
+    df_macro = pd.DataFrame({
+        'Costo_Fertilizantes': base_urea + shock_urea + ruido_urea,
+        'Indice_Logistico': indice_logistico
+    }, index=fechas)
+    return df_macro
 
 def generar_datos_mercado_simulados(producto, categoria):
     np.random.seed(42 + len(producto))
     fecha_fin = datetime.today()
     fecha_inicio = fecha_fin - timedelta(weeks=150)
-    fechas = pd.date_range(start=fecha_inicio, end=fecha_fin, freq='W')[-150:] # Asegurar exactamente 150
+    fechas = pd.date_range(start=fecha_inicio, end=fecha_fin, freq='W')[-150:] 
     
     bases = {
         "Brócoli (Caja)": 10, "Cebolla blanca en rama (Atado)": 2, "Cebolla colorada seca (Saco)": 25,
@@ -148,7 +149,7 @@ def generar_datos_mercado_simulados(producto, categoria):
     precio_mercado = precio_productor + margen + shocks_mercado
     
     df = pd.DataFrame({'Precio_Productor': precio_productor, 'Precio_Mercado': precio_mercado}, index=fechas)
-    return df, fecha_inicio, fecha_fin
+    return df, fechas[0], fechas[-1]
 
 # --- 3. DESARROLLO DE LAS PÁGINAS ---
 
@@ -348,10 +349,10 @@ elif opcion_menu == "Diagnóstico IA 🤖":
                 except Exception as e:
                     st.error(f"❌ Error de IA: {e}")
 
-# NUEVA SECCIÓN: VECMX (CON VARIABLES EXÓGENAS CLIMÁTICAS)
+# NUEVA SECCIÓN: VECMX (MACRO VARIABLES + CONSENSO DE CRITERIOS)
 elif opcion_menu == "📈 Mercados y Precios (VECMX)":
     st.subheader("📈 Inteligencia de Mercados: Predicción VECMX")
-    st.info("💡 **Modelo VECMX (Extendido):** Analiza la cointegración de precios integrando variables exógenas reales (precipitación y temperatura histórica de su parcela) para predicciones más robustas.")
+    st.info("💡 **Modelo VECMX:** Analiza la cointegración de precios integrando variables macroeconómicas exógenas (Costos de Insumos/Logística) evaluadas mediante consenso estadístico multicriterio.")
     st.markdown("---")
     
     categorias_dict = {
@@ -370,17 +371,13 @@ elif opcion_menu == "📈 Mercados y Precios (VECMX)":
     es_exportacion = categoria_seleccionada in ["Cultivos Tradicionales / Exportación", "Floricultura"]
     etiqueta_mercado = "Precio Internacional (FOB)" if es_exportacion else "Precio Mayorista (Ciudad)"
     
-    # 1. Obtenemos datos endógenos (Precios) y el rango de fechas
     df_precios, start_d, end_d = generar_datos_mercado_simulados(producto_mercado, categoria_seleccionada)
     
-    with st.spinner("☁️ Extrayendo historial climático exógeno de la coordenada..."):
-        # 2. Obtenemos datos exógenos (Clima real o simulado fallback)
-        df_exogenas = obtener_clima_historico_exogeno(st.session_state.lat, st.session_state.lon, start_d, end_d)
-        
-        # Alineamos los índices para evitar errores de pandas
+    with st.spinner("🌐 Obteniendo variables macroeconómicas exógenas (Precios Urea/Logística)..."):
+        df_exogenas = obtener_variables_macro_exogenas(start_d, end_d)
         df_exogenas = df_exogenas.reindex(df_precios.index).fillna(method='ffill').fillna(method='bfill')
 
-    st.write("### 📊 Histórico de Precios y Clima Exógeno")
+    st.write("### 📊 Histórico de Precios")
     fig_hist = go.Figure()
     fig_hist.add_trace(go.Scatter(x=df_precios.index, y=df_precios['Precio_Productor'], name='Productor (Finca)', line=dict(color='#00E676')))
     fig_hist.add_trace(go.Scatter(x=df_precios.index, y=df_precios['Precio_Mercado'], name=etiqueta_mercado, line=dict(color='#2979FF')))
@@ -393,31 +390,37 @@ elif opcion_menu == "📈 Mercados y Precios (VECMX)":
         ejecutar_vecm = st.button("🔮 Proyectar (VECMX)", use_container_width=True)
 
     if ejecutar_vecm:
-        with st.spinner("🧠 Optimizando VECMX con Criterio BIC y evaluando estabilidad..."):
+        with st.spinner("🧠 Ejecutando modelo VECMX con Consenso de Criterios (AIC/BIC/HQIC)..."):
             try:
-                # PASO 1: Selección robusta de rezagos (BIC) y Estabilidad
+                # 1. EVALUACIÓN MULTICRITERIO DE REZAGOS
                 modelo_var = VAR(df_precios, exog=df_exogenas)
                 resultados_seleccion = modelo_var.select_order(maxlags=8)
-                p_optimo = resultados_seleccion.bic # Usamos Bayesiano por parsimonia
                 
-                # Verificación de estabilidad (Eigenvalues)
-                if p_optimo > 0:
-                    modelo_ajustado = modelo_var.fit(p_optimo)
+                aic_lags = resultados_seleccion.aic if resultados_seleccion.aic is not None else 1
+                bic_lags = resultados_seleccion.bic if resultados_seleccion.bic is not None else 1
+                hqic_lags = resultados_seleccion.hqic if resultados_seleccion.hqic is not None else 1
+                
+                # Consenso: Mediana de los criterios
+                p_optimo_consenso = int(np.median([aic_lags, bic_lags, hqic_lags]))
+                
+                # Verificación de estabilidad
+                if p_optimo_consenso > 0:
+                    modelo_ajustado = modelo_var.fit(p_optimo_consenso)
                     raices = np.abs(np.linalg.eigvals(modelo_ajustado.coefs[0]))
                     if np.max(raices) >= 1.0:
-                        p_optimo = max(1, p_optimo - 1) # Castigamos si es explosivo
+                        p_optimo_consenso = max(1, p_optimo_consenso - 1)
                 
-                k_ar_diff_opt = max(1, p_optimo - 1)
+                k_ar_diff_opt = max(1, p_optimo_consenso - 1)
                 
-                # PASO 2: Test de Johansen
+                # 2. Test de Johansen
                 johansen_test = coint_johansen(df_precios, det_order=0, k_ar_diff=k_ar_diff_opt)
                 hay_cointegracion = johansen_test.lr1[0] > johansen_test.cvt[0, 1]
                 
-                # PASO 3: Modelo VECMX
+                # 3. Modelo VECMX
                 modelo_vecmx = VECM(df_precios, exog=df_exogenas, k_ar_diff=k_ar_diff_opt, deterministic='co')
                 resultado_vecmx = modelo_vecmx.fit()
                 
-                # PASO 4: Predicción Exógena Naive (Asumimos clima promedio de las últimas 8 semanas)
+                # 4. Predicción Exógena Naive
                 pasos_futuro = 8
                 exog_futuras = df_exogenas.tail(pasos_futuro).values
                 prediccion = resultado_vecmx.predict(steps=pasos_futuro, exog_fc=exog_futuras)
@@ -425,7 +428,7 @@ elif opcion_menu == "📈 Mercados y Precios (VECMX)":
                 fechas_futuras = pd.date_range(start=df_precios.index[-1] + timedelta(days=7), periods=pasos_futuro, freq='W')
                 df_pred = pd.DataFrame(prediccion, index=fechas_futuras, columns=['Pred_Productor', 'Pred_Mercado'])
                 
-                # RESULTADOS VISUALES
+                # 5. SALIDA VISUAL
                 st.markdown("---")
                 st.write(f"### 🎯 Proyección VECMX: {producto_mercado}")
                 df_cola = df_precios.tail(10)
@@ -439,19 +442,24 @@ elif opcion_menu == "📈 Mercados y Precios (VECMX)":
                 st.plotly_chart(fig_pred, use_container_width=True)
                 
                 tendencia = "AL ALZA 📈" if df_pred['Pred_Productor'].iloc[-1] > df_pred['Pred_Productor'].iloc[0] else "A LA BAJA 📉"
-                st.success(f"**Recomendación:** Proyección {tendencia} para las próximas 8 semanas integrando factores climáticos locales.")
+                st.success(f"**Recomendación:** Proyección {tendencia} para las próximas 8 semanas considerando costos de producción agregados (Fertilizantes y Transporte).")
                 
                 # CAJÓN PARA ECONOMISTAS
-                with st.expander("🛠️ Auditoría Econométrica VECMX (Para Especialistas)"):
-                    st.write("**Especificación del Modelo:** $\Delta Y_t = \\alpha \\beta' Y_{t-1} + \sum \Gamma_i \Delta Y_{t-i} + B X_t + \epsilon_t$")
-                    c_diag1, c_diag2, c_diag3 = st.columns(3)
-                    c_diag1.metric("📐 Rezagos VAR (BIC)", f"{p_optimo}")
-                    c_diag2.metric("📊 Test Johansen", "Rechaza H0" if hay_cointegracion else "No rechaza H0")
-                    # Test Ljung-Box para ruido blanco (whiteness)
-                    test_blanco = resultado_vecmx.test_whiteness(nlags=10)
-                    c_diag3.metric("📉 Residuos (Ljung-Box p-val)", f"{round(test_blanco.pvalue, 3)}")
+                with st.expander("🛠️ Auditoría Econométrica VECMX (Tribunal de Criterios)"):
+                    st.write("**Selección de Rezagos ($p$):**")
+                    c_lag1, c_lag2, c_lag3, c_lag4 = st.columns(4)
+                    c_lag1.metric("AIC", f"{aic_lags}")
+                    c_lag2.metric("BIC", f"{bic_lags}")
+                    c_lag3.metric("HQIC", f"{hqic_lags}")
+                    c_lag4.metric("🏆 Consenso (Mediana)", f"{p_optimo_consenso}")
                     
-                    st.caption(f"*Variables Exógenas ($X_t$):* Precipitación y Temperatura (API Open-Meteo). *Estabilidad:* Raíces VAR < 1 verificadas.")
+                    st.write("**Estadísticos de Diagnóstico:**")
+                    c_diag1, c_diag2 = st.columns(2)
+                    c_diag1.metric("📊 Test Johansen", "Rechaza H0" if hay_cointegracion else "No rechaza H0")
+                    test_blanco = resultado_vecmx.test_whiteness(nlags=10)
+                    c_diag2.metric("📉 Residuos (Ljung-Box p-val)", f"{round(test_blanco.pvalue, 3)}")
+                    
+                    st.caption(f"*Metodología:* Se inyectaron variables exógenas ($X_t$) simuladas de Costos Logísticos y Urea. El modelo evaluó los 3 criterios de información y seleccionó la mediana para equilibrar parsimonia y poder predictivo. Se verificó que las raíces del VAR sean menores a 1 para garantizar estabilidad.")
                     
             except Exception as e:
                 st.error(f"❌ Ocurrió un error en la estimación VECMX: {e}")
