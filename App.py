@@ -60,7 +60,6 @@ if nuevo_lat != st.session_state.lat or nuevo_lon != st.session_state.lon:
     st.rerun()
 
 st.sidebar.markdown("---")
-# NUEVO: Agregamos el menú de Mercados
 opcion_menu = st.sidebar.radio("📋 Ir a:", ["Menú Principal (Mapa)", "Control meteorológico y predicción climática", "Análisis Suelo", "Mapa Satelital (NDVI)", "Diagnóstico IA 🤖", "📈 Mercados y Precios (VECM)"])
 
 # --- FUNCIONES AUXILIARES ---
@@ -87,15 +86,12 @@ def obtener_datos_suelo(lat, lon):
     try: return requests.get(url).json()
     except: return None
 
-# NUEVA FUNCIÓN: Simulador de datos SIPA y Mercado Internacional
+# NUEVA FUNCIÓN DE SIMULACIÓN VECM (Limpiada y Organizada)
 def generar_datos_mercado_simulados(producto, categoria):
-    np.random.seed(42 + len(producto)) # Semilla para consistencia
-    
-    # El tiempo dinámico y eterno que corregimos antes
+    np.random.seed(42 + len(producto))
     fecha_fin = datetime.today()
     fechas = pd.date_range(end=fecha_fin, periods=150, freq='W')
     
-    # Catálogo maestro (USD)
     bases = {
         # Consumo Interno
         "Brócoli (Caja)": 10, "Cebolla blanca en rama (Atado)": 2, "Cebolla colorada seca (Saco)": 25,
@@ -106,7 +102,7 @@ def generar_datos_mercado_simulados(producto, categoria):
         "Tomate de árbol (Caja)": 15, "Mora de castilla (Balde)": 20, "Plátano barraganete verde (Caja)": 7, "Plátano barraganete maduro (Caja)": 8,
         "Arroz (Quintal)": 38, "Maíz suave choclo (Saco)": 25, "Maíz suave seco (Quintal)": 30, "Maíz duro (Quintal)": 18,
         "Fréjol canario (Quintal)": 45, "Lenteja (Quintal)": 40,
-        # Mercado de Exportación
+        # Mercado de Exportación y Floricultura
         "Cacao (Quintal)": 350, "Banano (Caja FOB)": 6.5,
         "Rosas (Bonche 25 tallos)": 4.5, "Gypsophila (Bonche)": 3.0, "Claveles (Bonche)": 2.5
     }
@@ -114,23 +110,22 @@ def generar_datos_mercado_simulados(producto, categoria):
     precio_base = bases.get(producto, 10)
     es_exportacion = categoria in ["Cultivos Tradicionales / Exportación", "Floricultura"]
     
-    # Volatilidad ajustada dinámicamente según el costo del producto
     volatilidad = precio_base * 0.05 
     shocks_productor = np.random.normal(0, volatilidad, 150)
     precio_productor = precio_base + np.cumsum(shocks_productor)
     
-    # LÓGICA DE EXPORTACIÓN VS LOCAL
     if es_exportacion:
-        margen = precio_base * 1.50 # 150% de recargo por logística aérea/marítima internacional
+        margen = precio_base * 1.50
         shocks_mercado = np.random.normal(0, volatilidad * 1.5, 150)
     else:
-        margen = precio_base * 0.35 # 35% de recargo en mercado mayorista local
+        margen = precio_base * 0.35
         shocks_mercado = np.random.normal(0, volatilidad * 0.8, 150)
         
     precio_mercado = precio_productor + margen + shocks_mercado
     
     df = pd.DataFrame({'Fecha': fechas, 'Precio_Productor': precio_productor, 'Precio_Mercado': precio_mercado})
     return df.set_index('Fecha')
+
 # --- 3. DESARROLLO DE LAS PÁGINAS ---
 
 if opcion_menu == "Menú Principal (Mapa)":
@@ -346,13 +341,14 @@ elif opcion_menu == "Diagnóstico IA 🤖":
                 except Exception as e:
                     st.error(f"❌ Error de IA: {e}")
 
-# NUEVA SECCIÓN: PREDICCIÓN ECONOMÉTRICA VECM
+# LA SECCIÓN VECM CORREGIDA PARA LAS LISTAS EN CASCADA
 elif opcion_menu == "📈 Mercados y Precios (VECM)":
     st.subheader("📈 Inteligencia de Mercados: Predicción VECM")
     st.info("💡 **Modelo de Vectores de Corrección de Errores (VECM):** Analiza la cointegración histórica entre el precio pagado al agricultor (Finca) y el mercado final para predecir las próximas 8 semanas.")
     
     st.markdown("---")
     
+    # 1. El Diccionario Correcto
     categorias_dict = {
         "Hortalizas y Legumbres": ["Brócoli (Caja)", "Cebolla blanca en rama (Atado)", "Cebolla colorada seca (Saco)", "Tomate riñón (Caja)", "Lechuga (Caja)", "Col (Saco)", "Zanahoria amarilla (Saco)", "Pimiento (Saco)", "Remolacha (Saco)", "Arveja tierna (Saco)", "Fréjol tierno (Saco)"],
         "Raíces y Tubérculos": ["Papa superchola (Quintal)", "Yuca (Saco)"],
@@ -362,6 +358,7 @@ elif opcion_menu == "📈 Mercados y Precios (VECM)":
         "Floricultura": ["Rosas (Bonche 25 tallos)", "Gypsophila (Bonche)", "Claveles (Bonche)"]
     }
     
+    # 2. Las columnas y los selectbox en cascada
     c_cat, c_prod, c_btn = st.columns([1.5, 2, 1])
     
     with c_cat:
@@ -370,14 +367,13 @@ elif opcion_menu == "📈 Mercados y Precios (VECM)":
     with c_prod:
         producto_mercado = st.selectbox("🛒 2. Seleccione el Producto:", categorias_dict[categoria_seleccionada])
     
-    # MAGIA DE INTERFAZ: Cambiamos las etiquetas según el tipo de mercado
     es_exportacion = categoria_seleccionada in ["Cultivos Tradicionales / Exportación", "Floricultura"]
     etiqueta_mercado = "Precio Internacional (FOB)" if es_exportacion else "Precio Mayorista (Ciudad)"
     tipo_mercado_txt = "FOS/FOB internacional" if es_exportacion else "mercados terminales (SIPA)"
     
     st.markdown(f"*(Nota: Datos históricos simulados basados en las ponderaciones del diferencial Finca vs {tipo_mercado_txt}).*")
     
-    # Pasamos ambos parámetros a la función
+    # 3. Llamada a la función con ambos parámetros
     df_historico = generar_datos_mercado_simulados(producto_mercado, categoria_seleccionada)
     
     st.write("### 📊 Histórico de Precios (Últimas 150 Semanas)")
