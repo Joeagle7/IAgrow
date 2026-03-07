@@ -347,7 +347,6 @@ elif opcion_menu == "Diagnóstico IA 🤖":
                     st.error(f"❌ Error de IA: {e}")
 
 # NUEVA SECCIÓN: PREDICCIÓN ECONOMÉTRICA VECM
-# NUEVA SECCIÓN: PREDICCIÓN ECONOMÉTRICA VECM
 elif opcion_menu == "📈 Mercados y Precios (VECM)":
     st.subheader("📈 Inteligencia de Mercados: Predicción VECM")
     st.info("💡 **Modelo de Vectores de Corrección de Errores (VECM):** Analiza la cointegración histórica entre el precio pagado al agricultor (Finca) y el mercado final para predecir las próximas 8 semanas.")
