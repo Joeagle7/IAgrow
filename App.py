@@ -87,45 +87,50 @@ def obtener_datos_suelo(lat, lon):
     try: return requests.get(url).json()
     except: return None
 
-# NUEVA FUNCIÓN: Simulador de datos SIPA con Catálogo Completo
-def generar_datos_mercado_simulados(producto):
+# NUEVA FUNCIÓN: Simulador de datos SIPA y Mercado Internacional
+def generar_datos_mercado_simulados(producto, categoria):
     np.random.seed(42 + len(producto)) # Semilla para consistencia
-# Solución: Tomamos la fecha de HOY y generamos las 150 semanas hacia atrás
+    
+    # El tiempo dinámico y eterno que corregimos antes
     fecha_fin = datetime.today()
-    fechas = pd.date_range(end=fecha_fin, periods=150, freq='W')    
-    # Catálogo maestro de precios base referenciales (USD)
+    fechas = pd.date_range(end=fecha_fin, periods=150, freq='W')
+    
+    # Catálogo maestro (USD)
     bases = {
-        # Hortalizas y Legumbres
+        # Consumo Interno
         "Brócoli (Caja)": 10, "Cebolla blanca en rama (Atado)": 2, "Cebolla colorada seca (Saco)": 25,
         "Tomate riñón (Caja)": 15, "Lechuga (Caja)": 8, "Col (Saco)": 12, "Zanahoria amarilla (Saco)": 18,
         "Pimiento (Saco)": 14, "Remolacha (Saco)": 12, "Arveja tierna (Saco)": 30, "Fréjol tierno (Saco)": 28,
-        # Raíces y Tubérculos
         "Papa superchola (Quintal)": 18, "Yuca (Saco)": 15,
-        # Frutas
         "Limón sutil (Saco)": 20, "Naranja (Ciento)": 8, "Mandarina (Ciento)": 7, "Melón (Unidad)": 1.5,
         "Tomate de árbol (Caja)": 15, "Mora de castilla (Balde)": 20, "Plátano barraganete verde (Caja)": 7, "Plátano barraganete maduro (Caja)": 8,
-        # Cereales y Granos Secos
         "Arroz (Quintal)": 38, "Maíz suave choclo (Saco)": 25, "Maíz suave seco (Quintal)": 30, "Maíz duro (Quintal)": 18,
         "Fréjol canario (Quintal)": 45, "Lenteja (Quintal)": 40,
-        # Exportación (Bonus)
-        "Cacao (Quintal)": 150, "Banano (Caja)": 6
+        # Mercado de Exportación
+        "Cacao (Quintal)": 350, "Banano (Caja FOB)": 6.5,
+        "Rosas (Bonche 25 tallos)": 4.5, "Gypsophila (Bonche)": 3.0, "Claveles (Bonche)": 2.5
     }
     
-    precio_base = bases.get(producto, 10) # Si no lo encuentra, usa 10 por defecto
+    precio_base = bases.get(producto, 10)
+    es_exportacion = categoria in ["Cultivos Tradicionales / Exportación", "Floricultura"]
     
-    # Caminata aleatoria (Random Walk)
-    volatilidad = 0.5 if precio_base < 50 else 2.5 
+    # Volatilidad ajustada dinámicamente según el costo del producto
+    volatilidad = precio_base * 0.05 
     shocks_productor = np.random.normal(0, volatilidad, 150)
     precio_productor = precio_base + np.cumsum(shocks_productor)
     
-    # Cointegración del Mercado Mayorista
-    margen_comercializacion = precio_base * 0.35 # 35% de margen a lo largo de la cadena
-    shocks_mayorista = np.random.normal(0, volatilidad * 0.8, 150)
-    precio_mayorista = precio_productor + margen_comercializacion + shocks_mayorista
+    # LÓGICA DE EXPORTACIÓN VS LOCAL
+    if es_exportacion:
+        margen = precio_base * 1.50 # 150% de recargo por logística aérea/marítima internacional
+        shocks_mercado = np.random.normal(0, volatilidad * 1.5, 150)
+    else:
+        margen = precio_base * 0.35 # 35% de recargo en mercado mayorista local
+        shocks_mercado = np.random.normal(0, volatilidad * 0.8, 150)
+        
+    precio_mercado = precio_productor + margen + shocks_mercado
     
-    df = pd.DataFrame({'Fecha': fechas, 'Precio_Productor': precio_productor, 'Precio_Mayorista': precio_mayorista})
+    df = pd.DataFrame({'Fecha': fechas, 'Precio_Productor': precio_productor, 'Precio_Mercado': precio_mercado})
     return df.set_index('Fecha')
-
 # --- 3. DESARROLLO DE LAS PÁGINAS ---
 
 if opcion_menu == "Menú Principal (Mapa)":
@@ -342,22 +347,22 @@ elif opcion_menu == "Diagnóstico IA 🤖":
                     st.error(f"❌ Error de IA: {e}")
 
 # NUEVA SECCIÓN: PREDICCIÓN ECONOMÉTRICA VECM
+# NUEVA SECCIÓN: PREDICCIÓN ECONOMÉTRICA VECM
 elif opcion_menu == "📈 Mercados y Precios (VECM)":
     st.subheader("📈 Inteligencia de Mercados: Predicción VECM")
-    st.info("💡 **Modelo de Vectores de Corrección de Errores (VECM):** Analiza la cointegración histórica entre el precio pagado al agricultor (Finca) y el precio de venta en la ciudad (Mayorista) para predecir las próximas 8 semanas.")
+    st.info("💡 **Modelo de Vectores de Corrección de Errores (VECM):** Analiza la cointegración histórica entre el precio pagado al agricultor (Finca) y el mercado final para predecir las próximas 8 semanas.")
     
     st.markdown("---")
     
-    # 1. DICCIONARIO DE CATEGORÍAS PARA LA INTERFAZ
     categorias_dict = {
         "Hortalizas y Legumbres": ["Brócoli (Caja)", "Cebolla blanca en rama (Atado)", "Cebolla colorada seca (Saco)", "Tomate riñón (Caja)", "Lechuga (Caja)", "Col (Saco)", "Zanahoria amarilla (Saco)", "Pimiento (Saco)", "Remolacha (Saco)", "Arveja tierna (Saco)", "Fréjol tierno (Saco)"],
         "Raíces y Tubérculos": ["Papa superchola (Quintal)", "Yuca (Saco)"],
         "Frutas": ["Limón sutil (Saco)", "Naranja (Ciento)", "Mandarina (Ciento)", "Melón (Unidad)", "Tomate de árbol (Caja)", "Mora de castilla (Balde)", "Plátano barraganete verde (Caja)", "Plátano barraganete maduro (Caja)"],
         "Cereales y Granos Secos": ["Arroz (Quintal)", "Maíz suave choclo (Saco)", "Maíz suave seco (Quintal)", "Maíz duro (Quintal)", "Fréjol canario (Quintal)", "Lenteja (Quintal)"],
-        "Cultivos Tradicionales / Exportación": ["Cacao (Quintal)", "Banano (Caja)"]
+        "Cultivos Tradicionales / Exportación": ["Cacao (Quintal)", "Banano (Caja FOB)"],
+        "Floricultura": ["Rosas (Bonche 25 tallos)", "Gypsophila (Bonche)", "Claveles (Bonche)"]
     }
     
-    # 2. LISTAS EN CASCADA
     c_cat, c_prod, c_btn = st.columns([1.5, 2, 1])
     
     with c_cat:
@@ -366,66 +371,56 @@ elif opcion_menu == "📈 Mercados y Precios (VECM)":
     with c_prod:
         producto_mercado = st.selectbox("🛒 2. Seleccione el Producto:", categorias_dict[categoria_seleccionada])
     
-    st.markdown("*(Nota: Datos históricos simulados basados en las ponderaciones del SIPA - MAG Ecuador).*")
+    # MAGIA DE INTERFAZ: Cambiamos las etiquetas según el tipo de mercado
+    es_exportacion = categoria_seleccionada in ["Cultivos Tradicionales / Exportación", "Floricultura"]
+    etiqueta_mercado = "Precio Internacional (FOB)" if es_exportacion else "Precio Mayorista (Ciudad)"
+    tipo_mercado_txt = "FOS/FOB internacional" if es_exportacion else "mercados terminales (SIPA)"
     
-    # Generamos la data histórica
-    df_historico = generar_datos_mercado_simulados(producto_mercado)    
-    # Graficamos la historia
+    st.markdown(f"*(Nota: Datos históricos simulados basados en las ponderaciones del diferencial Finca vs {tipo_mercado_txt}).*")
+    
+    # Pasamos ambos parámetros a la función
+    df_historico = generar_datos_mercado_simulados(producto_mercado, categoria_seleccionada)
+    
     st.write("### 📊 Histórico de Precios (Últimas 150 Semanas)")
     fig_hist = go.Figure()
     fig_hist.add_trace(go.Scatter(x=df_historico.index, y=df_historico['Precio_Productor'], name='Precio Productor (Finca)', line=dict(color='#00E676')))
-    fig_hist.add_trace(go.Scatter(x=df_historico.index, y=df_historico['Precio_Mayorista'], name='Precio Mayorista (Ciudad)', line=dict(color='#2979FF')))
+    fig_hist.add_trace(go.Scatter(x=df_historico.index, y=df_historico['Precio_Mercado'], name=etiqueta_mercado, line=dict(color='#2979FF')))
     fig_hist.update_layout(template="plotly_dark", yaxis_title="Precio Promedio (USD)", hovermode="x unified")
     st.plotly_chart(fig_hist, use_container_width=True)
     
     with c_btn:
-        st.write("") # Espacio
+        st.write("") 
         st.write("") 
         ejecutar_vecm = st.button("🔮 Proyectar Precios", use_container_width=True)
 
     if ejecutar_vecm:
         with st.spinner("Ejecutando Modelo VECM de Cointegración..."):
             try:
-                # 1. Preparación del Modelo VECM
-                # k_ar_diff=1 significa que miramos 1 semana atrás para corregir el error
-                modelo_vecm = VECM(df_historico[['Precio_Productor', 'Precio_Mayorista']], k_ar_diff=1, deterministic='co')
-                
-                # 2. Entrenamiento del modelo
+                modelo_vecm = VECM(df_historico[['Precio_Productor', 'Precio_Mercado']], k_ar_diff=1, deterministic='co')
                 resultado_vecm = modelo_vecm.fit()
-                
-                # 3. Predicción (8 semanas al futuro)
                 pasos_futuro = 8
                 prediccion = resultado_vecm.predict(steps=pasos_futuro)
-                
-                # 4. Construcción del DataFrame futuro
                 fechas_futuras = pd.date_range(start=df_historico.index[-1] + timedelta(days=7), periods=pasos_futuro, freq='W')
-                df_pred = pd.DataFrame(prediccion, index=fechas_futuras, columns=['Pred_Productor', 'Pred_Mayorista'])
+                df_pred = pd.DataFrame(prediccion, index=fechas_futuras, columns=['Pred_Productor', 'Pred_Mercado'])
                 
-                # 5. Gráfico de Predicción (Plotly)
                 st.markdown("---")
                 st.write(f"### 🎯 Proyección a Corto Plazo: {producto_mercado}")
-                
-                # Unimos los últimos 10 datos históricos con los futuros para que la línea sea continua
                 df_cola = df_historico.tail(10)
                 
                 fig_pred = go.Figure()
-                # Historia (Gris)
-                fig_pred.add_trace(go.Scatter(x=df_cola.index, y=df_cola['Precio_Mayorista'], name='Mayorista Histórico', line=dict(color='gray', dash='dot')))
+                fig_pred.add_trace(go.Scatter(x=df_cola.index, y=df_cola['Precio_Mercado'], name=f'{etiqueta_mercado} Histórico', line=dict(color='gray', dash='dot')))
                 fig_pred.add_trace(go.Scatter(x=df_cola.index, y=df_cola['Precio_Productor'], name='Productor Histórico', line=dict(color='gray', dash='dot')))
                 
-                # Futuro (Colores)
-                fig_pred.add_trace(go.Scatter(x=df_pred.index, y=df_pred['Pred_Mayorista'], name='Proyección Mayorista', line=dict(color='#2979FF', width=3)))
+                fig_pred.add_trace(go.Scatter(x=df_pred.index, y=df_pred['Pred_Mercado'], name=f'Proyección {etiqueta_mercado.split()[1]}', line=dict(color='#2979FF', width=3)))
                 fig_pred.add_trace(go.Scatter(x=df_pred.index, y=df_pred['Pred_Productor'], name='Proyección Productor', line=dict(color='#00E676', width=3)))
                 
                 fig_pred.update_layout(template="plotly_dark", yaxis_title="Precio Proyectado (USD)", hovermode="x unified")
                 st.plotly_chart(fig_pred, use_container_width=True)
                 
-                # Interpretación Econométrica Básica
                 tendencia = "AL ALZA 📈" if df_pred['Pred_Productor'].iloc[-1] > df_pred['Pred_Productor'].iloc[0] else "A LA BAJA 📉"
-                st.success(f"**Análisis:** El modelo VECM detecta que la tendencia general para las próximas 8 semanas es **{tendencia}**. Sugerimos planificar las cosechas y negociaciones con los intermediarios considerando esta proyección.")
+                mercado_analisis = "internacional" if es_exportacion else "nacional"
+                
+                st.success(f"**Análisis:** El modelo VECM detecta que la tendencia general para las próximas 8 semanas es **{tendencia}**. Sugerimos planificar las cosechas y negociaciones considerando esta proyección en el mercado **{mercado_analisis}**.")
                 
             except Exception as e:
                 st.error(f"❌ Ocurrió un error en el cálculo matricial del VECM: {e}")
-
-
-
