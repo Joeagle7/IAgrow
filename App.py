@@ -88,22 +88,39 @@ def obtener_datos_suelo(lat, lon):
     try: return requests.get(url).json()
     except: return None
 
-# NUEVA FUNCIÓN: Simulador de datos SIPA para probar el modelo VECM
+# NUEVA FUNCIÓN: Simulador de datos SIPA con Catálogo Completo
 def generar_datos_mercado_simulados(producto):
     np.random.seed(42 + len(producto)) # Semilla para consistencia
     fechas = pd.date_range(start='2021-01-01', periods=150, freq='W') # 150 semanas históricas
     
-    # Precios base simulados por producto (USD por unidad de medida estándar)
-    bases = {"Papa Superchola (Quintal)": 15, "Tomate Riñón (Caja)": 12, "Cebolla Paiteña (Saco)": 20, "Arroz (Quintal)": 35, "Plátano Barraganete (Caja)": 6}
-    precio_base = bases.get(producto, 10)
+    # Catálogo maestro de precios base referenciales (USD)
+    bases = {
+        # Hortalizas y Legumbres
+        "Brócoli (Caja)": 10, "Cebolla blanca en rama (Atado)": 2, "Cebolla colorada seca (Saco)": 25,
+        "Tomate riñón (Caja)": 15, "Lechuga (Caja)": 8, "Col (Saco)": 12, "Zanahoria amarilla (Saco)": 18,
+        "Pimiento (Saco)": 14, "Remolacha (Saco)": 12, "Arveja tierna (Saco)": 30, "Fréjol tierno (Saco)": 28,
+        # Raíces y Tubérculos
+        "Papa superchola (Quintal)": 18, "Yuca (Saco)": 15,
+        # Frutas
+        "Limón sutil (Saco)": 20, "Naranja (Ciento)": 8, "Mandarina (Ciento)": 7, "Melón (Unidad)": 1.5,
+        "Tomate de árbol (Caja)": 15, "Mora de castilla (Balde)": 20, "Plátano barraganete verde (Caja)": 7, "Plátano barraganete maduro (Caja)": 8,
+        # Cereales y Granos Secos
+        "Arroz (Quintal)": 38, "Maíz suave choclo (Saco)": 25, "Maíz suave seco (Quintal)": 30, "Maíz duro (Quintal)": 18,
+        "Fréjol canario (Quintal)": 45, "Lenteja (Quintal)": 40,
+        # Exportación (Bonus)
+        "Cacao (Quintal)": 150, "Banano (Caja)": 6
+    }
     
-    # Caminata aleatoria (Random Walk) para el Precio del Productor
-    shocks_productor = np.random.normal(0, 0.5, 150)
+    precio_base = bases.get(producto, 10) # Si no lo encuentra, usa 10 por defecto
+    
+    # Caminata aleatoria (Random Walk)
+    volatilidad = 0.5 if precio_base < 50 else 2.5 
+    shocks_productor = np.random.normal(0, volatilidad, 150)
     precio_productor = precio_base + np.cumsum(shocks_productor)
     
-    # El Precio Mayorista está "cointegrado" (se mueve junto al del productor pero con un margen)
-    margen_comercializacion = precio_base * 0.35 # 35% más caro en mercado
-    shocks_mayorista = np.random.normal(0, 0.3, 150)
+    # Cointegración del Mercado Mayorista
+    margen_comercializacion = precio_base * 0.35 # 35% de margen a lo largo de la cadena
+    shocks_mayorista = np.random.normal(0, volatilidad * 0.8, 150)
     precio_mayorista = precio_productor + margen_comercializacion + shocks_mayorista
     
     df = pd.DataFrame({'Fecha': fechas, 'Precio_Productor': precio_productor, 'Precio_Mayorista': precio_mayorista})
@@ -397,3 +414,4 @@ elif opcion_menu == "📈 Mercados y Precios (VECM)":
                 
             except Exception as e:
                 st.error(f"❌ Ocurrió un error en el cálculo matricial del VECM: {e}")
+
