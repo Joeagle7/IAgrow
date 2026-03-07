@@ -12,7 +12,6 @@ from datetime import datetime, timedelta
 import google.generativeai as genai
 from PIL import Image
 import io
-# NUEVO: Importamos el modelo VECM para econometría
 from statsmodels.tsa.vector_ar.vecm import VECM
 
 # --- 1. CONFIGURACIÓN Y ESTADO DE MEMORIA ---
@@ -347,17 +346,29 @@ elif opcion_menu == "📈 Mercados y Precios (VECM)":
     st.info("💡 **Modelo de Vectores de Corrección de Errores (VECM):** Analiza la cointegración histórica entre el precio pagado al agricultor (Finca) y el precio de venta en la ciudad (Mayorista) para predecir las próximas 8 semanas.")
     
     st.markdown("---")
-    c_prod, c_btn = st.columns([3, 1])
     
+    # 1. DICCIONARIO DE CATEGORÍAS PARA LA INTERFAZ
+    categorias_dict = {
+        "Hortalizas y Legumbres": ["Brócoli (Caja)", "Cebolla blanca en rama (Atado)", "Cebolla colorada seca (Saco)", "Tomate riñón (Caja)", "Lechuga (Caja)", "Col (Saco)", "Zanahoria amarilla (Saco)", "Pimiento (Saco)", "Remolacha (Saco)", "Arveja tierna (Saco)", "Fréjol tierno (Saco)"],
+        "Raíces y Tubérculos": ["Papa superchola (Quintal)", "Yuca (Saco)"],
+        "Frutas": ["Limón sutil (Saco)", "Naranja (Ciento)", "Mandarina (Ciento)", "Melón (Unidad)", "Tomate de árbol (Caja)", "Mora de castilla (Balde)", "Plátano barraganete verde (Caja)", "Plátano barraganete maduro (Caja)"],
+        "Cereales y Granos Secos": ["Arroz (Quintal)", "Maíz suave choclo (Saco)", "Maíz suave seco (Quintal)", "Maíz duro (Quintal)", "Fréjol canario (Quintal)", "Lenteja (Quintal)"],
+        "Cultivos Tradicionales / Exportación": ["Cacao (Quintal)", "Banano (Caja)"]
+    }
+    
+    # 2. LISTAS EN CASCADA
+    c_cat, c_prod, c_btn = st.columns([1.5, 2, 1])
+    
+    with c_cat:
+        categoria_seleccionada = st.selectbox("📁 1. Categoría Agrícola:", list(categorias_dict.keys()))
+        
     with c_prod:
-        producto_mercado = st.selectbox("🛒 Seleccione un rubro agrícola (Consumo Interno):", 
-                                        ["Papa Superchola (Quintal)", "Tomate Riñón (Caja)", "Cebolla Paiteña (Saco)", "Arroz (Quintal)", "Plátano Barraganete (Caja)"])
+        producto_mercado = st.selectbox("🛒 2. Seleccione el Producto:", categorias_dict[categoria_seleccionada])
     
-    st.markdown("*(Nota: Para este prototipo funcional, se utilizan datos simulados basados en los diferenciales reales reportados por el SIPA del Ministerio de Agricultura de Ecuador).*")
+    st.markdown("*(Nota: Datos históricos simulados basados en las ponderaciones del SIPA - MAG Ecuador).*")
     
     # Generamos la data histórica
-    df_historico = generar_datos_mercado_simulados(producto_mercado)
-    
+    df_historico = generar_datos_mercado_simulados(producto_mercado)    
     # Graficamos la historia
     st.write("### 📊 Histórico de Precios (Últimas 150 Semanas)")
     fig_hist = go.Figure()
@@ -414,4 +425,5 @@ elif opcion_menu == "📈 Mercados y Precios (VECM)":
                 
             except Exception as e:
                 st.error(f"❌ Ocurrió un error en el cálculo matricial del VECM: {e}")
+
 
