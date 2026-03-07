@@ -9,3 +9,6 @@ earthengine-api
 google-generativeai
 pillow
 statsmodels
+beautifulsoup4
+lxml
+openpyxl
