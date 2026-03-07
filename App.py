@@ -90,8 +90,9 @@ def obtener_datos_suelo(lat, lon):
 # NUEVA FUNCIÓN: Simulador de datos SIPA con Catálogo Completo
 def generar_datos_mercado_simulados(producto):
     np.random.seed(42 + len(producto)) # Semilla para consistencia
-    fechas = pd.date_range(start='2021-01-01', periods=150, freq='W') # 150 semanas históricas
-    
+# Solución: Tomamos la fecha de HOY y generamos las 150 semanas hacia atrás
+    fecha_fin = datetime.today()
+    fechas = pd.date_range(end=fecha_fin, periods=150, freq='W')    
     # Catálogo maestro de precios base referenciales (USD)
     bases = {
         # Hortalizas y Legumbres
@@ -425,5 +426,6 @@ elif opcion_menu == "📈 Mercados y Precios (VECM)":
                 
             except Exception as e:
                 st.error(f"❌ Ocurrió un error en el cálculo matricial del VECM: {e}")
+
 
 
