@@ -12,7 +12,10 @@ from datetime import datetime, timedelta
 import google.generativeai as genai
 from PIL import Image
 import io
-from statsmodels.tsa.vector_ar.vecm import VECM
+from statsmodels.tsa.vector_ar.vecm import VECM, coint_johansen
+from statsmodels.tsa.vector_ar.var_model import VAR
+import warnings
+warnings.filterwarnings('ignore')
 
 # --- 1. CONFIGURACIÓN Y ESTADO DE MEMORIA ---
 st.set_page_config(page_title="AgroIA - Panel de Decisión", page_icon="🌾", layout="wide")
@@ -341,14 +344,13 @@ elif opcion_menu == "Diagnóstico IA 🤖":
                 except Exception as e:
                     st.error(f"❌ Error de IA: {e}")
 
-# LA SECCIÓN VECM CORREGIDA PARA LAS LISTAS EN CASCADA
+# NUEVA SECCIÓN: PREDICCIÓN ECONOMÉTRICA VECM (UX OPTIMIZADO)
 elif opcion_menu == "📈 Mercados y Precios (VECM)":
     st.subheader("📈 Inteligencia de Mercados: Predicción VECM")
-    st.info("💡 **Modelo de Vectores de Corrección de Errores (VECM):** Analiza la cointegración histórica entre el precio pagado al agricultor (Finca) y el mercado final para predecir las próximas 8 semanas.")
+    st.info("💡 Analiza la historia de precios entre la Finca y el Mercado para proyectar la tendencia de las próximas 8 semanas.")
     
     st.markdown("---")
     
-    # 1. El Diccionario Correcto
     categorias_dict = {
         "Hortalizas y Legumbres": ["Brócoli (Caja)", "Cebolla blanca en rama (Atado)", "Cebolla colorada seca (Saco)", "Tomate riñón (Caja)", "Lechuga (Caja)", "Col (Saco)", "Zanahoria amarilla (Saco)", "Pimiento (Saco)", "Remolacha (Saco)", "Arveja tierna (Saco)", "Fréjol tierno (Saco)"],
         "Raíces y Tubérculos": ["Papa superchola (Quintal)", "Yuca (Saco)"],
@@ -358,7 +360,6 @@ elif opcion_menu == "📈 Mercados y Precios (VECM)":
         "Floricultura": ["Rosas (Bonche 25 tallos)", "Gypsophila (Bonche)", "Claveles (Bonche)"]
     }
     
-    # 2. Las columnas y los selectbox en cascada
     c_cat, c_prod, c_btn = st.columns([1.5, 2, 1])
     
     with c_cat:
@@ -369,18 +370,17 @@ elif opcion_menu == "📈 Mercados y Precios (VECM)":
     
     es_exportacion = categoria_seleccionada in ["Cultivos Tradicionales / Exportación", "Floricultura"]
     etiqueta_mercado = "Precio Internacional (FOB)" if es_exportacion else "Precio Mayorista (Ciudad)"
-    tipo_mercado_txt = "FOS/FOB internacional" if es_exportacion else "mercados terminales (SIPA)"
+    tipo_mercado_txt = "FOS/FOB internacional" if es_exportacion else "mercados terminales"
     
     st.markdown(f"*(Nota: Datos históricos simulados basados en las ponderaciones del diferencial Finca vs {tipo_mercado_txt}).*")
     
-    # 3. Llamada a la función con ambos parámetros
     df_historico = generar_datos_mercado_simulados(producto_mercado, categoria_seleccionada)
     
     st.write("### 📊 Histórico de Precios (Últimas 150 Semanas)")
     fig_hist = go.Figure()
     fig_hist.add_trace(go.Scatter(x=df_historico.index, y=df_historico['Precio_Productor'], name='Precio Productor (Finca)', line=dict(color='#00E676')))
     fig_hist.add_trace(go.Scatter(x=df_historico.index, y=df_historico['Precio_Mercado'], name=etiqueta_mercado, line=dict(color='#2979FF')))
-    fig_hist.update_layout(template="plotly_dark", yaxis_title="Precio Promedio (USD)", hovermode="x unified")
+    fig_hist.update_layout(template="plotly_dark", yaxis_title="Precio Promedio (USD)", hovermode="x unified", margin=dict(l=0, r=0, t=30, b=0))
     st.plotly_chart(fig_hist, use_container_width=True)
     
     with c_btn:
@@ -389,15 +389,29 @@ elif opcion_menu == "📈 Mercados y Precios (VECM)":
         ejecutar_vecm = st.button("🔮 Proyectar Precios", use_container_width=True)
 
     if ejecutar_vecm:
-        with st.spinner("Ejecutando Modelo VECM de Cointegración..."):
+        with st.spinner("🧠 Analizando tendencias del mercado..."):
             try:
-                modelo_vecm = VECM(df_historico[['Precio_Productor', 'Precio_Mercado']], k_ar_diff=1, deterministic='co')
+                # 1. CÁLCULOS ECONOMÉTRICOS SILENCIOSOS
+                modelo_var = VAR(df_historico[['Precio_Productor', 'Precio_Mercado']])
+                # Aumentamos a 12 semanas (un trimestre) para dar más margen a la memoria del mercado
+                rezagos_optimos = modelo_var.select_order(maxlags=12)
+                p_optimo_aic = rezagos_optimos.aic
+                k_ar_diff_opt = max(1, p_optimo_aic - 1) 
+                
+                johansen_test = coint_johansen(df_historico[['Precio_Productor', 'Precio_Mercado']], det_order=0, k_ar_diff=k_ar_diff_opt)
+                estadistico_traza = round(johansen_test.lr1[0], 2)
+                valor_critico_95 = round(johansen_test.cvt[0, 1], 2)
+                hay_cointegracion = estadistico_traza > valor_critico_95
+                
+                modelo_vecm = VECM(df_historico[['Precio_Productor', 'Precio_Mercado']], k_ar_diff=k_ar_diff_opt, deterministic='co')
                 resultado_vecm = modelo_vecm.fit()
+                
                 pasos_futuro = 8
                 prediccion = resultado_vecm.predict(steps=pasos_futuro)
                 fechas_futuras = pd.date_range(start=df_historico.index[-1] + timedelta(days=7), periods=pasos_futuro, freq='W')
                 df_pred = pd.DataFrame(prediccion, index=fechas_futuras, columns=['Pred_Productor', 'Pred_Mercado'])
                 
+                # 2. SALIDA GRÁFICA PARA EL AGRICULTOR (Prioridad Visual)
                 st.markdown("---")
                 st.write(f"### 🎯 Proyección a Corto Plazo: {producto_mercado}")
                 df_cola = df_historico.tail(10)
@@ -409,13 +423,29 @@ elif opcion_menu == "📈 Mercados y Precios (VECM)":
                 fig_pred.add_trace(go.Scatter(x=df_pred.index, y=df_pred['Pred_Mercado'], name=f'Proyección {etiqueta_mercado.split()[1]}', line=dict(color='#2979FF', width=3)))
                 fig_pred.add_trace(go.Scatter(x=df_pred.index, y=df_pred['Pred_Productor'], name='Proyección Productor', line=dict(color='#00E676', width=3)))
                 
-                fig_pred.update_layout(template="plotly_dark", yaxis_title="Precio Proyectado (USD)", hovermode="x unified")
+                fig_pred.update_layout(template="plotly_dark", yaxis_title="Precio Proyectado (USD)", hovermode="x unified", margin=dict(l=0, r=0, t=30, b=0))
                 st.plotly_chart(fig_pred, use_container_width=True)
                 
+                # 3. INTERPRETACIÓN EN LENGUAJE NATURAL
                 tendencia = "AL ALZA 📈" if df_pred['Pred_Productor'].iloc[-1] > df_pred['Pred_Productor'].iloc[0] else "A LA BAJA 📉"
                 mercado_analisis = "internacional" if es_exportacion else "nacional"
                 
-                st.success(f"**Análisis:** El modelo VECM detecta que la tendencia general para las próximas 8 semanas es **{tendencia}**. Sugerimos planificar las cosechas y negociaciones considerando esta proyección en el mercado **{mercado_analisis}**.")
+                st.success(f"**Recomendación Comercial:** La proyección indica una tendencia general **{tendencia}** para las próximas 8 semanas en el mercado {mercado_analisis}. Considere esta información para planificar sus cosechas o negociar con intermediarios.")
+                
+                # 4. EL CAJÓN TÉCNICO OCULTO (Para Académicos y Economistas)
+                with st.expander("🛠️ Detalles Técnicos y Econométricos (Solo para especialistas)"):
+                    st.write("Resultados de la validación matemática del modelo en segundo plano:")
+                    c_diag1, c_diag2, c_diag3 = st.columns(3)
+                    c_diag1.metric("📐 Rezagos VAR (AIC)", f"{p_optimo_aic} Semanas")
+                    c_diag2.metric("📊 Estadístico Traza", f"{estadistico_traza}")
+                    c_diag3.metric("🎯 Valor Crítico (95%)", f"{valor_critico_95}")
+                    
+                    if hay_cointegracion:
+                        st.write("✅ **Cointegración (Johansen):** Se rechaza $H_0$. Las series se mueven juntas a largo plazo.")
+                    else:
+                        st.warning("⚠️ **Alerta:** No se rechaza $H_0$. Las series podrían no estar cointegradas estadísticamente.")
+                        
+                    st.caption("*Nota Metodológica: El modelo selecciona rezagos automáticamente vía AIC (maxlags=12). Para un análisis formal pre-producción, el economista de datos debe auditar los correlogramas (ACF y PACF) para descartar autocorrelación residual severa en los errores.*")
                 
             except Exception as e:
-                st.error(f"❌ Ocurrió un error en el cálculo matricial del VECM: {e}")
+                st.error(f"❌ Ocurrió un error en el cálculo econométrico: {e}")
