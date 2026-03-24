@@ -3,7 +3,7 @@
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-import io
+import io 
 import warnings
 
 # Ignoramos advertencias de seguridad SSL si las páginas del gobierno tienen certificados vencidos (muy común)
