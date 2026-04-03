@@ -12,97 +12,77 @@ from PIL import Image
 import io
 
 # --- 1. CONFIGURACIÓN Y ESTADO DE MEMORIA ---
-st.set_page_config(page_title="AgroIA - Panel de Decisión", page_icon="🌾", layout="wide")
+st.set_page_config(page_title="AgroIA", page_icon="🌿", layout="wide")
 
 if "lat" not in st.session_state: st.session_state.lat = -2.1962
 if "lon" not in st.session_state: st.session_state.lon = -79.8862
 
-@st.cache_resource
-def inicializar_google_earth_engine():
-    try:
-        if "EE_CREDENTIALS" in st.secrets:
-            import json
-            from google.oauth2 import service_account
-            creds_dict = json.loads(st.secrets["EE_CREDENTIALS"])
-            credentials = service_account.Credentials.from_service_account_info(creds_dict)
-            scoped_credentials = credentials.with_scopes(['https://www.googleapis.com/auth/earthengine'])
-            ee.Initialize(scoped_credentials)
-        else:
-            ee.Initialize()
-        return True
-    except Exception as e:
-        return False
-
-gee_activo = inicializar_google_earth_engine()
-
-try:
-    if "GEMINI_API_KEY" in st.secrets:
-        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        gemini_activo = True
-    else:
-        gemini_activo = False
-except Exception as e:
-    gemini_activo = False
-
-# --- 2. DISEÑO UI/UX EJECUTIVO (VERDE Y TURQUESA) ---
+# --- 2. DISEÑO UI/UX CORPORATIVO (ESTILO AGRICOLUS/FONTAGRO) ---
 st.markdown("""
 <style>
-    /* Estilos del contenedor principal del menú */
+    /* Ocultar elementos por defecto de Streamlit para mayor limpieza */
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Contenedor principal de la barra superior */
+    .top-nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 0px;
+        border-bottom: 1px solid #e0e0e0;
+        margin-bottom: 20px;
+    }
+    
+    /* Estilización extrema para convertir Radio Buttons en un Menú Web limpio */
     div[data-testid="stRadio"] > div {
         display: flex;
         flex-direction: row;
-        justify-content: center;
-        background: linear-gradient(90deg, #f4fdfb 0%, #e8f5e9 100%);
-        padding: 15px;
-        border-radius: 8px;
-        border-bottom: 4px solid #009688;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        gap: 15px;
-        flex-wrap: wrap;
+        gap: 30px;
+        background-color: transparent;
     }
-    /* Estilo de las opciones del menú */
     div[data-testid="stRadio"] > div > label {
-        background-color: white;
-        padding: 10px 20px;
-        border-radius: 5px;
-        border: 1px solid #c8e6c9;
-        color: #2e7d32 !important;
-        font-weight: 600;
+        background-color: transparent !important;
+        border: none !important;
+        padding: 5px 0px !important;
+        color: #333333 !important;
+        font-weight: 500 !important;
+        font-size: 16px !important;
         cursor: pointer;
-        transition: all 0.3s ease;
+        border-radius: 0px !important;
+        box-shadow: none !important;
     }
+    /* Efecto hover sutil y marca de sección activa (borde inferior turquesa) */
     div[data-testid="stRadio"] > div > label:hover {
-        background-color: #e0f2f1;
-        border-color: #009688;
-        transform: translateY(-2px);
+        color: #00796B !important;
     }
-    /* Tarjetas de métricas */
-    .stMetric { 
-        background: #ffffff; 
-        border-radius: 8px; 
-        padding: 15px; 
-        border-left: 5px solid #009688;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    div[data-testid="stRadio"] > div > label[data-checked="true"] {
+        color: #004D40 !important;
+        border-bottom: 3px solid #00796B !important;
+        font-weight: 700 !important;
+    }
+    div[data-testid="stRadio"] > div > label > div:first-child {
+        display: none; /* Oculta el circulito del radio button */
     }
 </style>
 """, unsafe_allow_html=True)
 
-c_logo, c_title = st.columns([1, 11])
+# Construcción de la Barra de Navegación
+c_logo, c_menu = st.columns([3, 7])
+
 with c_logo:
-    st.markdown("## 🌿")
-with c_title:
-    st.title("AgroIA: Terminal de Precisión Climática")
+    # Simulamos el logo a la izquierda
+    st.markdown("<h2 style='color: #2E7D32; margin-top: 0;'>🌿 AgroIA</h2>", unsafe_allow_html=True)
 
-st.markdown("---")
-
-# Menú Horizontal
-opcion_menu = st.radio(
-    "Navegación:", 
-    ["Menú Principal (Mapa)", "Control Meteorológico", "Perfil de Suelo (Copernicus)", "Mapa Satelital (NDVI)", "Diagnóstico IA 🤖"],
-    horizontal=True,
-    label_visibility="collapsed"
-)
-st.markdown("<br>", unsafe_allow_html=True) # Espaciador
+with c_menu:
+    # Menú a la derecha, sin etiqueta visible
+    opcion_menu = st.radio(
+        "", 
+        ["Mapa", "Meteorología", "Suelo", "Satélite (NDVI)", "Diagnóstico IA"],
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+st.markdown("---") # Línea divisoria ejecutiva
 
 # --- FUNCIONES AUXILIARES ---
 def grados_a_direccion(grados):
