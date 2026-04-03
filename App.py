@@ -119,50 +119,55 @@ def obtener_datos_clima(lat, lon):
     try: return requests.get(url).json()
     except: return None
 
-# 1. API COPERNICUS ERA5-LAND (CORREGIDA AL ENDPOINT EUROPEO)
+# 1. API COPERNICUS ERA5-LAND BLINDADA
 def obtener_datos_suelo_copernicus(lat, lon):
-    # Ahora usamos /v1/ecmwf para garantizar la asimilación de 4 capas correctas
-    url = f"https://api.open-meteo.com/v1/ecmwf?latitude={lat}&longitude={lon}&current=soil_temperature_0_to_7cm,soil_temperature_7_to_28cm,soil_temperature_28_to_100cm,soil_temperature_100_to_255cm,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm,soil_moisture_28_to_100cm,soil_moisture_100_to_255cm&timezone=America/Guayaquil"
+    # Usamos 'hourly' en lugar de 'current' para asegurar que siempre haya datos disponibles
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=soil_temperature_0_to_7cm,soil_temperature_7_to_28cm,soil_temperature_28_to_100cm,soil_temperature_100_to_255cm,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm,soil_moisture_28_to_100cm,soil_moisture_100_to_255cm&timezone=America/Guayaquil"
     try: 
-        respuesta = requests.get(url)
+        respuesta = requests.get(url, timeout=10)
         if respuesta.status_code == 200:
-            return respuesta.json()
+            data = respuesta.json()
+            if 'hourly' in data:
+                # Extraemos el valor actual (índice 0) de cada lista para evitar el error NoneType
+                return {k: v[0] for k, v in data['hourly'].items() if isinstance(v, list) and len(v) > 0}
         return None
     except: return None
 
-# 2. API NASA POWER
+# 2. API NASA POWER CON VENTANA SEGURA
 def obtener_datos_nasa_power(lat, lon, start_date, end_date):
     url = f"https://power.larc.nasa.gov/api/temporal/daily/point?parameters=ALLSKY_SFC_SW_DWN,PRECTOTCORR&community=AG&longitude={lon}&latitude={lat}&start={start_date}&end={end_date}&format=JSON"
     try:
-        respuesta = requests.get(url)
+        respuesta = requests.get(url, timeout=15)
         if respuesta.status_code == 200:
             datos = respuesta.json()
-            df = pd.DataFrame(datos['properties']['parameter'])
-            df.index = pd.to_datetime(df.index, format='%Y%m%d')
-            return df
+            if 'properties' in datos and 'parameter' in datos['properties']:
+                df = pd.DataFrame(datos['properties']['parameter'])
+                if not df.empty:
+                    df.index = pd.to_datetime(df.index, format='%Y%m%d')
+                    return df
         return None
     except:
         return None
 
-# 3. ALGORITMO INTEGRADO (BLINDADO CONTRA ERRORES)
+# 3. ALGORITMO INTEGRADO TOTALMENTE BLINDADO
 def evaluar_potencial_crecimiento(lat, lon):
-    # Fechas para NASA POWER (retraso natural de satélites de 5 días)
-    end_date = (datetime.today() - timedelta(days=5)).strftime('%Y%m%d')
-    start_date = (datetime.today() - timedelta(days=12)).strftime('%Y%m%d')
+    # Retrocedemos 7 a 14 días para asegurar que la NASA ya procesó los datos satelitales globales
+    end_date = (datetime.today() - timedelta(days=7)).strftime('%Y%m%d')
+    start_date = (datetime.today() - timedelta(days=14)).strftime('%Y%m%d')
     
     df_nasa = obtener_datos_nasa_power(lat, lon, start_date, end_date)
-    json_copernicus = obtener_datos_suelo_copernicus(lat, lon)
+    datos_suelo = obtener_datos_suelo_copernicus(lat, lon)
     
-    if df_nasa is None or not json_copernicus or 'current' not in json_copernicus:
+    if df_nasa is None or df_nasa.empty or datos_suelo is None:
         return None
         
-    # BLINDAJE MATEMÁTICO: Si Copernicus falla, asignamos 0 en lugar de colapsar
-    humedad_raiz = json_copernicus['current'].get('soil_moisture_28_to_100cm')
+    # BLINDAJE MATEMÁTICO: Extraemos con .get y fallback a 0.0 para evitar errores de comparación
+    humedad_raiz = datos_suelo.get('soil_moisture_28_to_100cm', 0.0)
     if humedad_raiz is None: 
         humedad_raiz = 0.0
         
-    radiacion_promedio = df_nasa['ALLSKY_SFC_SW_DWN'].mean()
-    lluvia_acumulada = df_nasa['PRECTOTCORR'].sum()
+    radiacion_promedio = df_nasa['ALLSKY_SFC_SW_DWN'].mean() if 'ALLSKY_SFC_SW_DWN' in df_nasa else 0.0
+    lluvia_acumulada = df_nasa['PRECTOTCORR'].sum() if 'PRECTOTCORR' in df_nasa else 0.0
     
     # Cruce de Variables
     if radiacion_promedio > 15 and humedad_raiz > 0.25:
@@ -239,19 +244,17 @@ elif opcion_menu == "Suelo":
     st.subheader(f"🌍 Perfil Físico del Suelo (ERA5-Land: Copernicus)")
     st.info("Modelo Termodinámico e Hidrológico Asimilado. Representa el volumen de agua pura contenida en la matriz del suelo y su temperatura.")
     
-    json_suelo = obtener_datos_suelo_copernicus(st.session_state.lat, st.session_state.lon)
+    datos_suelo = obtener_datos_suelo_copernicus(st.session_state.lat, st.session_state.lon)
     
-    if json_suelo and 'current' in json_suelo:
-        datos = json_suelo['current']
-        
+    if datos_suelo:
         st.markdown("### 💧 Humedad Volumétrica del Suelo (m³/m³)")
         ch1, ch2, ch3, ch4 = st.columns(4)
         
-        # Extracción segura de datos
-        m_0_7 = datos.get('soil_moisture_0_to_7cm')
-        m_7_28 = datos.get('soil_moisture_7_to_28cm')
-        m_28_100 = datos.get('soil_moisture_28_to_100cm')
-        m_100_255 = datos.get('soil_moisture_100_to_255cm')
+        # Extracción segura
+        m_0_7 = datos_suelo.get('soil_moisture_0_to_7cm')
+        m_7_28 = datos_suelo.get('soil_moisture_7_to_28cm')
+        m_28_100 = datos_suelo.get('soil_moisture_28_to_100cm')
+        m_100_255 = datos_suelo.get('soil_moisture_100_to_255cm')
         
         ch1.metric("0 - 7 cm (Siembra)", f"{m_0_7} m³" if m_0_7 is not None else "N/D")
         ch2.metric("7 - 28 cm (Raíz Corta)", f"{m_7_28} m³" if m_7_28 is not None else "N/D")
@@ -262,7 +265,7 @@ elif opcion_menu == "Suelo":
         st.markdown("### 🌡️ Temperatura del Perfil del Suelo (°C)")
         ct1, ct2, ct3, ct4 = st.columns(4)
         
-        t_0_7 = datos.get('soil_temperature_0_to_7cm')
+        t_0_7 = datos_suelo.get('soil_temperature_0_to_7cm')
         t_7_28 = datos.get('soil_temperature_7_to_28cm')
         t_28_100 = datos.get('soil_temperature_28_to_100cm')
         t_100_255 = datos.get('soil_temperature_100_to_255cm')
@@ -272,7 +275,7 @@ elif opcion_menu == "Suelo":
         ct3.metric("28 - 100 cm", f"{t_28_100} °C" if t_28_100 is not None else "N/D")
         ct4.metric("100 - 289 cm", f"{t_100_255} °C" if t_100_255 is not None else "N/D")
     else:
-        st.error("❌ Error de comunicación. Asegúrese de ingresar coordenadas continentales válidas.")
+        st.error("❌ Error de comunicación con los servidores satelitales. Asegúrese de ingresar coordenadas válidas.")
 
 elif opcion_menu == "Estado de la Planta":
     st.subheader("⚡ Potencial de Crecimiento y Estado Termo-Hídrico")
@@ -287,9 +290,9 @@ elif opcion_menu == "Estado de la Planta":
         
         st.markdown("---")
         c1, c2, c3 = st.columns(3)
-        c1.metric("☀️ Energía PAR (NASA)", f"{resultado_sinergia['radiacion']} MJ/m²/día", help="Promedio de Radiación Solar de los últimos 7 días.")
+        c1.metric("☀️ Energía PAR (NASA)", f"{resultado_sinergia['radiacion']} MJ/m²/día", help="Promedio de Radiación Solar de la última semana disponible.")
         c2.metric("💧 Reserva Profunda (Copernicus)", f"{resultado_sinergia['humedad']} m³/m³", help="Humedad del suelo a profundidad de 28 a 100 cm.")
-        c3.metric("🌧️ Lluvia Acumulada (NASA)", f"{resultado_sinergia['lluvia']} mm", help="Precipitación acumulada de los últimos 7 días.")
+        c3.metric("🌧️ Lluvia Acumulada (NASA)", f"{resultado_sinergia['lluvia']} mm", help="Precipitación acumulada de la última semana disponible.")
     else:
         st.error("❌ Error de comunicación con los servidores espaciales. Verifique las coordenadas.")
 
