@@ -46,24 +46,12 @@ try:
 except Exception as e:
     gemini_activo = False
 
-# --- 2. DISEÑO UI/UX CORPORATIVO (ESTILO AGRICOLUS/FONTAGRO) ---
+# --- 2. DISEÑO UI/UX CORPORATIVO ---
 st.markdown("""
 <style>
-    /* Ocultar elementos por defecto de Streamlit para mayor limpieza */
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Contenedor principal de la barra superior */
-    .top-nav {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 10px 0px;
-        border-bottom: 1px solid #e0e0e0;
-        margin-bottom: 20px;
-    }
-    
-    /* Estilización extrema para convertir Radio Buttons en un Menú Web limpio */
     div[data-testid="stRadio"] > div {
         display: flex;
         flex-direction: row;
@@ -81,7 +69,6 @@ st.markdown("""
         border-radius: 0px !important;
         box-shadow: none !important;
     }
-    /* Efecto hover sutil y marca de sección activa (borde inferior turquesa) */
     div[data-testid="stRadio"] > div > label:hover {
         color: #00796B !important;
     }
@@ -91,9 +78,8 @@ st.markdown("""
         font-weight: 700 !important;
     }
     div[data-testid="stRadio"] > div > label > div:first-child {
-        display: none; /* Oculta el circulito del radio button */
+        display: none; 
     }
-    /* Tarjetas de métricas ejecutivas */
     .stMetric { 
         background: #ffffff; 
         border-radius: 8px; 
@@ -104,7 +90,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Construcción de la Barra de Navegación
 c_logo, c_menu = st.columns([2, 8])
 
 with c_logo:
@@ -113,7 +98,7 @@ with c_logo:
 with c_menu:
     opcion_menu = st.radio(
         "", 
-        ["Mapa", "Meteorología", "Suelo", "Sinergia", "Satélite", "Diagnóstico IA"],
+        ["Mapa", "Meteorología", "Suelo", "Estado de la Planta", "Satélite", "Diagnóstico IA"],
         horizontal=True,
         label_visibility="collapsed"
     )
@@ -134,10 +119,15 @@ def obtener_datos_clima(lat, lon):
     try: return requests.get(url).json()
     except: return None
 
-# 1. API COPERNICUS ERA5-LAND
+# 1. API COPERNICUS ERA5-LAND (CORREGIDA AL ENDPOINT EUROPEO)
 def obtener_datos_suelo_copernicus(lat, lon):
-    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=soil_temperature_0_to_7cm,soil_temperature_7_to_28cm,soil_temperature_28_to_100cm,soil_temperature_100_to_255cm,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm,soil_moisture_28_to_100cm,soil_moisture_100_to_255cm&timezone=America/Guayaquil"
-    try: return requests.get(url).json()
+    # Ahora usamos /v1/ecmwf para garantizar la asimilación de 4 capas correctas
+    url = f"https://api.open-meteo.com/v1/ecmwf?latitude={lat}&longitude={lon}&current=soil_temperature_0_to_7cm,soil_temperature_7_to_28cm,soil_temperature_28_to_100cm,soil_temperature_100_to_255cm,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm,soil_moisture_28_to_100cm,soil_moisture_100_to_255cm&timezone=America/Guayaquil"
+    try: 
+        respuesta = requests.get(url)
+        if respuesta.status_code == 200:
+            return respuesta.json()
+        return None
     except: return None
 
 # 2. API NASA POWER
@@ -154,9 +144,9 @@ def obtener_datos_nasa_power(lat, lon, start_date, end_date):
     except:
         return None
 
-# 3. ALGORITMO DE SINERGIA
+# 3. ALGORITMO INTEGRADO (BLINDADO CONTRA ERRORES)
 def evaluar_potencial_crecimiento(lat, lon):
-    # Fechas para NASA POWER (asumiendo un retraso natural de la API de 5 días)
+    # Fechas para NASA POWER (retraso natural de satélites de 5 días)
     end_date = (datetime.today() - timedelta(days=5)).strftime('%Y%m%d')
     start_date = (datetime.today() - timedelta(days=12)).strftime('%Y%m%d')
     
@@ -166,7 +156,11 @@ def evaluar_potencial_crecimiento(lat, lon):
     if df_nasa is None or not json_copernicus or 'current' not in json_copernicus:
         return None
         
-    humedad_raiz = json_copernicus['current'].get('soil_moisture_28_to_100cm', 0)
+    # BLINDAJE MATEMÁTICO: Si Copernicus falla, asignamos 0 en lugar de colapsar
+    humedad_raiz = json_copernicus['current'].get('soil_moisture_28_to_100cm')
+    if humedad_raiz is None: 
+        humedad_raiz = 0.0
+        
     radiacion_promedio = df_nasa['ALLSKY_SFC_SW_DWN'].mean()
     lluvia_acumulada = df_nasa['PRECTOTCORR'].sum()
     
@@ -252,30 +246,43 @@ elif opcion_menu == "Suelo":
         
         st.markdown("### 💧 Humedad Volumétrica del Suelo (m³/m³)")
         ch1, ch2, ch3, ch4 = st.columns(4)
-        ch1.metric("0 - 7 cm (Siembra)", f"{datos.get('soil_moisture_0_to_7cm', 'N/A')} m³")
-        ch2.metric("7 - 28 cm (Raíz Corta)", f"{datos.get('soil_moisture_7_to_28cm', 'N/A')} m³")
-        ch3.metric("28 - 100 cm (Raíz Profunda)", f"{datos.get('soil_moisture_28_to_100cm', 'N/A')} m³")
-        ch4.metric("100 - 289 cm (Acuífero)", f"{datos.get('soil_moisture_100_to_255cm', 'N/A')} m³")
+        
+        # Extracción segura de datos
+        m_0_7 = datos.get('soil_moisture_0_to_7cm')
+        m_7_28 = datos.get('soil_moisture_7_to_28cm')
+        m_28_100 = datos.get('soil_moisture_28_to_100cm')
+        m_100_255 = datos.get('soil_moisture_100_to_255cm')
+        
+        ch1.metric("0 - 7 cm (Siembra)", f"{m_0_7} m³" if m_0_7 is not None else "N/D")
+        ch2.metric("7 - 28 cm (Raíz Corta)", f"{m_7_28} m³" if m_7_28 is not None else "N/D")
+        ch3.metric("28 - 100 cm (Raíz Profunda)", f"{m_28_100} m³" if m_28_100 is not None else "N/D")
+        ch4.metric("100 - 289 cm (Acuífero)", f"{m_100_255} m³" if m_100_255 is not None else "N/D")
         
         st.markdown("---")
         st.markdown("### 🌡️ Temperatura del Perfil del Suelo (°C)")
         ct1, ct2, ct3, ct4 = st.columns(4)
-        ct1.metric("0 - 7 cm (Superficie)", f"{datos.get('soil_temperature_0_to_7cm', 'N/A')} °C")
-        ct2.metric("7 - 28 cm (Zona Fúngica)", f"{datos.get('soil_temperature_7_to_28cm', 'N/A')} °C")
-        ct3.metric("28 - 100 cm", f"{datos.get('soil_temperature_28_to_100cm', 'N/A')} °C")
-        ct4.metric("100 - 289 cm", f"{datos.get('soil_temperature_100_to_255cm', 'N/A')} °C")
+        
+        t_0_7 = datos.get('soil_temperature_0_to_7cm')
+        t_7_28 = datos.get('soil_temperature_7_to_28cm')
+        t_28_100 = datos.get('soil_temperature_28_to_100cm')
+        t_100_255 = datos.get('soil_temperature_100_to_255cm')
+        
+        ct1.metric("0 - 7 cm (Superficie)", f"{t_0_7} °C" if t_0_7 is not None else "N/D")
+        ct2.metric("7 - 28 cm (Zona Fúngica)", f"{t_7_28} °C" if t_7_28 is not None else "N/D")
+        ct3.metric("28 - 100 cm", f"{t_28_100} °C" if t_28_100 is not None else "N/D")
+        ct4.metric("100 - 289 cm", f"{t_100_255} °C" if t_100_255 is not None else "N/D")
     else:
-        st.error("❌ Error al conectar con la asimilación del modelo Copernicus.")
+        st.error("❌ Error de comunicación. Asegúrese de ingresar coordenadas continentales válidas.")
 
-elif opcion_menu == "Sinergia":
-    st.subheader("⚡ Potencial de Crecimiento Termo-Hídrico")
-    st.info("Algoritmo de Sinergia Espacial: Cruza la energía solar acumulada (NASA) con las reservas de agua subterránea (Copernicus) para detectar estrés vegetativo invisible.")
+elif opcion_menu == "Estado de la Planta":
+    st.subheader("⚡ Potencial de Crecimiento y Estado Termo-Hídrico")
+    st.info("Algoritmo de Integración Espacial: Cruza la energía solar acumulada (NASA) con las reservas de agua subterránea (Copernicus) para detectar estrés vegetativo invisible.")
     
     with st.spinner("Analizando matrices satelitales conjuntas (NASA POWER + Copernicus)..."):
         resultado_sinergia = evaluar_potencial_crecimiento(st.session_state.lat, st.session_state.lon)
         
     if resultado_sinergia:
-        st.markdown(f"### Diagnóstico Sinérgico: {resultado_sinergia['estado']}")
+        st.markdown(f"### Diagnóstico del Lote: {resultado_sinergia['estado']}")
         st.write(f"**Análisis:** {resultado_sinergia['mensaje']}")
         
         st.markdown("---")
@@ -284,7 +291,7 @@ elif opcion_menu == "Sinergia":
         c2.metric("💧 Reserva Profunda (Copernicus)", f"{resultado_sinergia['humedad']} m³/m³", help="Humedad del suelo a profundidad de 28 a 100 cm.")
         c3.metric("🌧️ Lluvia Acumulada (NASA)", f"{resultado_sinergia['lluvia']} mm", help="Precipitación acumulada de los últimos 7 días.")
     else:
-        st.error("❌ Error de comunicación con los servidores espaciales. Por favor, intente nuevamente más tarde.")
+        st.error("❌ Error de comunicación con los servidores espaciales. Verifique las coordenadas.")
 
 elif opcion_menu == "Satélite":
     st.subheader(f"🛰️ Análisis Satelital de Salud Vegetal (NDVI)")
