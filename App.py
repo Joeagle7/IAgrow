@@ -10,12 +10,41 @@ from datetime import datetime, timedelta
 import google.generativeai as genai
 from PIL import Image
 import io
+import warnings
+warnings.filterwarnings('ignore')
 
 # --- 1. CONFIGURACIÓN Y ESTADO DE MEMORIA ---
 st.set_page_config(page_title="AgroIA", page_icon="🌿", layout="wide")
 
 if "lat" not in st.session_state: st.session_state.lat = -2.1962
 if "lon" not in st.session_state: st.session_state.lon = -79.8862
+
+@st.cache_resource
+def inicializar_google_earth_engine():
+    try:
+        if "EE_CREDENTIALS" in st.secrets:
+            import json
+            from google.oauth2 import service_account
+            creds_dict = json.loads(st.secrets["EE_CREDENTIALS"])
+            credentials = service_account.Credentials.from_service_account_info(creds_dict)
+            scoped_credentials = credentials.with_scopes(['https://www.googleapis.com/auth/earthengine'])
+            ee.Initialize(scoped_credentials)
+        else:
+            ee.Initialize()
+        return True
+    except Exception as e:
+        return False
+
+gee_activo = inicializar_google_earth_engine()
+
+try:
+    if "GEMINI_API_KEY" in st.secrets:
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        gemini_activo = True
+    else:
+        gemini_activo = False
+except Exception as e:
+    gemini_activo = False
 
 # --- 2. DISEÑO UI/UX CORPORATIVO (ESTILO AGRICOLUS/FONTAGRO) ---
 st.markdown("""
@@ -64,27 +93,33 @@ st.markdown("""
     div[data-testid="stRadio"] > div > label > div:first-child {
         display: none; /* Oculta el circulito del radio button */
     }
+    /* Tarjetas de métricas ejecutivas */
+    .stMetric { 
+        background: #ffffff; 
+        border-radius: 8px; 
+        padding: 15px; 
+        border-left: 5px solid #009688;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # Construcción de la Barra de Navegación
-c_logo, c_menu = st.columns([3, 7])
+c_logo, c_menu = st.columns([2, 8])
 
 with c_logo:
-    # Simulamos el logo a la izquierda
     st.markdown("<h2 style='color: #2E7D32; margin-top: 0;'>🌿 AgroIA</h2>", unsafe_allow_html=True)
 
 with c_menu:
-    # Menú a la derecha, sin etiqueta visible
     opcion_menu = st.radio(
         "", 
-        ["Mapa", "Meteorología", "Suelo", "Satélite (NDVI)", "Diagnóstico IA"],
+        ["Mapa", "Meteorología", "Suelo", "Sinergia", "Satélite", "Diagnóstico IA"],
         horizontal=True,
         label_visibility="collapsed"
     )
-st.markdown("---") # Línea divisoria ejecutiva
+st.markdown("---") 
 
-# --- FUNCIONES AUXILIARES ---
+# --- FUNCIONES AUXILIARES Y APIs ---
 def grados_a_direccion(grados):
     arr = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"]
     return arr[int((grados/22.5)+.5) % 16]
@@ -99,16 +134,67 @@ def obtener_datos_clima(lat, lon):
     try: return requests.get(url).json()
     except: return None
 
-# NUEVA FUNCIÓN: COPERNICUS ERA5-LAND
+# 1. API COPERNICUS ERA5-LAND
 def obtener_datos_suelo_copernicus(lat, lon):
-    # Llama a la asimilación física del suelo en 4 capas de profundidad
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=soil_temperature_0_to_7cm,soil_temperature_7_to_28cm,soil_temperature_28_to_100cm,soil_temperature_100_to_255cm,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm,soil_moisture_28_to_100cm,soil_moisture_100_to_255cm&timezone=America/Guayaquil"
     try: return requests.get(url).json()
     except: return None
 
+# 2. API NASA POWER
+def obtener_datos_nasa_power(lat, lon, start_date, end_date):
+    url = f"https://power.larc.nasa.gov/api/temporal/daily/point?parameters=ALLSKY_SFC_SW_DWN,PRECTOTCORR&community=AG&longitude={lon}&latitude={lat}&start={start_date}&end={end_date}&format=JSON"
+    try:
+        respuesta = requests.get(url)
+        if respuesta.status_code == 200:
+            datos = respuesta.json()
+            df = pd.DataFrame(datos['properties']['parameter'])
+            df.index = pd.to_datetime(df.index, format='%Y%m%d')
+            return df
+        return None
+    except:
+        return None
+
+# 3. ALGORITMO DE SINERGIA
+def evaluar_potencial_crecimiento(lat, lon):
+    # Fechas para NASA POWER (asumiendo un retraso natural de la API de 5 días)
+    end_date = (datetime.today() - timedelta(days=5)).strftime('%Y%m%d')
+    start_date = (datetime.today() - timedelta(days=12)).strftime('%Y%m%d')
+    
+    df_nasa = obtener_datos_nasa_power(lat, lon, start_date, end_date)
+    json_copernicus = obtener_datos_suelo_copernicus(lat, lon)
+    
+    if df_nasa is None or not json_copernicus or 'current' not in json_copernicus:
+        return None
+        
+    humedad_raiz = json_copernicus['current'].get('soil_moisture_28_to_100cm', 0)
+    radiacion_promedio = df_nasa['ALLSKY_SFC_SW_DWN'].mean()
+    lluvia_acumulada = df_nasa['PRECTOTCORR'].sum()
+    
+    # Cruce de Variables
+    if radiacion_promedio > 15 and humedad_raiz > 0.25:
+        estado = "🟢 Óptimo"
+        mensaje = "Alta energía solar respaldada por excelente reserva de agua profunda. El cultivo está en condiciones ideales para máxima fotosíntesis y rendimiento."
+    elif radiacion_promedio > 15 and humedad_raiz < 0.15:
+        estado = "🔴 Alerta Crítica (Estrés Termo-Hídrico)"
+        mensaje = "Alta radiación solar pero el acuífero radicular está severamente agotado. Riesgo inminente de marchitez permanente. Active el riego de inmediato."
+    elif radiacion_promedio <= 15 and humedad_raiz > 0.30:
+        estado = "🟡 Alerta Fúngica"
+        mensaje = "Baja radiación solar (fuerte nubosidad) y suelo saturado de agua. Las raíces corren riesgo de asfixia y existe un ambiente ideal para la proliferación de hongos patógenos."
+    else:
+        estado = "🔵 Moderado"
+        mensaje = "Condiciones de crecimiento estándar. Continúe con sus prácticas de manejo habituales y monitoree si la humedad disminuye en los próximos días."
+        
+    return {
+        "estado": estado,
+        "mensaje": mensaje,
+        "radiacion": round(radiacion_promedio, 2),
+        "humedad": humedad_raiz,
+        "lluvia": round(lluvia_acumulada, 2)
+    }
+
 # --- 3. DESARROLLO DE LAS PÁGINAS ---
 
-if opcion_menu == "Menú Principal (Mapa)":
+if opcion_menu == "Mapa":
     st.subheader("📍 Coordenadas de la Parcela")
     
     c_lat, c_lon, c_gps = st.columns([2, 2, 2])
@@ -135,7 +221,7 @@ if opcion_menu == "Menú Principal (Mapa)":
             st.session_state.lat, st.session_state.lon = click_lat, click_lon
             st.rerun()
 
-elif opcion_menu == "Control Meteorológico":
+elif opcion_menu == "Meteorología":
     st.subheader(f"🌤️ Pronóstico Agrometeorológico ({st.session_state.lat}, {st.session_state.lon})")
     json_clima = obtener_datos_clima(st.session_state.lat, st.session_state.lon)
     if json_clima and 'hourly' in json_clima:
@@ -155,10 +241,9 @@ elif opcion_menu == "Control Meteorológico":
         st.plotly_chart(px.line(df_hourly, x='Fecha_Hora', y='Evapotranspiración (mm)', title="Estrés Atmosférico (Evapotranspiración)", template="plotly_white", color_discrete_sequence=['#FF7043']), use_container_width=True)
         st.plotly_chart(px.bar(df_hourly, x='Fecha_Hora', y='Prob_Lluvia (%)', title="Probabilidad de Precipitación", template="plotly_white", color_discrete_sequence=['#42A5F5']), use_container_width=True)
 
-# LA NUEVA SECCIÓN DE SUELO (COPERNICUS)
-elif opcion_menu == "Perfil de Suelo (Copernicus)":
+elif opcion_menu == "Suelo":
     st.subheader(f"🌍 Perfil Físico del Suelo (ERA5-Land: Copernicus)")
-    st.info("Modelo Termodinámico e Hidrológico Asimilado. Representa el volumen de agua pura contenida en la matriz del suelo y su temperatura, vital para la raíz y microbiología.")
+    st.info("Modelo Termodinámico e Hidrológico Asimilado. Representa el volumen de agua pura contenida en la matriz del suelo y su temperatura.")
     
     json_suelo = obtener_datos_suelo_copernicus(st.session_state.lat, st.session_state.lon)
     
@@ -179,12 +264,29 @@ elif opcion_menu == "Perfil de Suelo (Copernicus)":
         ct2.metric("7 - 28 cm (Zona Fúngica)", f"{datos.get('soil_temperature_7_to_28cm', 'N/A')} °C")
         ct3.metric("28 - 100 cm", f"{datos.get('soil_temperature_28_to_100cm', 'N/A')} °C")
         ct4.metric("100 - 289 cm", f"{datos.get('soil_temperature_100_to_255cm', 'N/A')} °C")
-        
-        st.caption("*Interpretación Técnica: Humedad < 0.15 indica sequía severa en arcillas. Temperaturas > 28°C en zona radicular pueden acelerar patógenos como Fusarium o Phytophthora.*")
     else:
         st.error("❌ Error al conectar con la asimilación del modelo Copernicus.")
 
-elif opcion_menu == "Mapa Satelital (NDVI)":
+elif opcion_menu == "Sinergia":
+    st.subheader("⚡ Potencial de Crecimiento Termo-Hídrico")
+    st.info("Algoritmo de Sinergia Espacial: Cruza la energía solar acumulada (NASA) con las reservas de agua subterránea (Copernicus) para detectar estrés vegetativo invisible.")
+    
+    with st.spinner("Analizando matrices satelitales conjuntas (NASA POWER + Copernicus)..."):
+        resultado_sinergia = evaluar_potencial_crecimiento(st.session_state.lat, st.session_state.lon)
+        
+    if resultado_sinergia:
+        st.markdown(f"### Diagnóstico Sinérgico: {resultado_sinergia['estado']}")
+        st.write(f"**Análisis:** {resultado_sinergia['mensaje']}")
+        
+        st.markdown("---")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("☀️ Energía PAR (NASA)", f"{resultado_sinergia['radiacion']} MJ/m²/día", help="Promedio de Radiación Solar de los últimos 7 días.")
+        c2.metric("💧 Reserva Profunda (Copernicus)", f"{resultado_sinergia['humedad']} m³/m³", help="Humedad del suelo a profundidad de 28 a 100 cm.")
+        c3.metric("🌧️ Lluvia Acumulada (NASA)", f"{resultado_sinergia['lluvia']} mm", help="Precipitación acumulada de los últimos 7 días.")
+    else:
+        st.error("❌ Error de comunicación con los servidores espaciales. Por favor, intente nuevamente más tarde.")
+
+elif opcion_menu == "Satélite":
     st.subheader(f"🛰️ Análisis Satelital de Salud Vegetal (NDVI)")
     if not gee_activo:
         st.error("⚠️ Error: Google Earth Engine no está inicializado.")
@@ -220,7 +322,7 @@ elif opcion_menu == "Mapa Satelital (NDVI)":
             except Exception as e:
                 st.error(f"❌ Error satelital: {e}")
 
-elif opcion_menu == "Diagnóstico IA 🤖":
+elif opcion_menu == "Diagnóstico IA":
     st.subheader("🤖 Diagnóstico Fitosanitario Asistido por IA")
     st.warning("**⚠️ Aviso Legal:** Los resultados son probabilísticos. Verifique con un agrónomo.")
     
