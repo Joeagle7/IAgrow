@@ -96,8 +96,9 @@ with c_logo:
     st.markdown("<h2 style='color: #2E7D32; margin-top: 0;'>🌿 AgroIA</h2>", unsafe_allow_html=True)
 
 with c_menu:
+    # Solución al Warning de Accesibilidad de Streamlit (Agregamos "Navegación")
     opcion_menu = st.radio(
-        "", 
+        "Navegación", 
         ["Mapa", "Meteorología", "Suelo", "Estado de la Planta", "Satélite", "Diagnóstico IA"],
         horizontal=True,
         label_visibility="collapsed"
@@ -119,21 +120,26 @@ def obtener_datos_clima(lat, lon):
     try: return requests.get(url).json()
     except: return None
 
-# 1. API COPERNICUS ERA5-LAND BLINDADA
+# 1. API COPERNICUS ERA5-LAND (NUEVO PARSEADOR ANTI-VACÍOS)
 def obtener_datos_suelo_copernicus(lat, lon):
-    # Usamos 'hourly' en lugar de 'current' para asegurar que siempre haya datos disponibles
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=soil_temperature_0_to_7cm,soil_temperature_7_to_28cm,soil_temperature_28_to_100cm,soil_temperature_100_to_255cm,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm,soil_moisture_28_to_100cm,soil_moisture_100_to_255cm&timezone=America/Guayaquil"
     try: 
         respuesta = requests.get(url, timeout=10)
         if respuesta.status_code == 200:
             data = respuesta.json()
             if 'hourly' in data:
-                # Extraemos el valor actual (índice 0) de cada lista para evitar el error NoneType
-                return {k: v[0] for k, v in data['hourly'].items() if isinstance(v, list) and len(v) > 0}
+                resultado_limpio = {}
+                # Filtramos la lista para encontrar el primer dato que NO sea nulo
+                for key, values in data['hourly'].items():
+                    if isinstance(values, list):
+                        valores_validos = [x for x in values if x is not None]
+                        if valores_validos:
+                            resultado_limpio[key] = valores_validos[0]
+                return resultado_limpio
         return None
     except: return None
 
-# 2. API NASA POWER CON VENTANA SEGURA
+# 2. API NASA POWER
 def obtener_datos_nasa_power(lat, lon, start_date, end_date):
     url = f"https://power.larc.nasa.gov/api/temporal/daily/point?parameters=ALLSKY_SFC_SW_DWN,PRECTOTCORR&community=AG&longitude={lon}&latitude={lat}&start={start_date}&end={end_date}&format=JSON"
     try:
@@ -149,9 +155,8 @@ def obtener_datos_nasa_power(lat, lon, start_date, end_date):
     except:
         return None
 
-# 3. ALGORITMO INTEGRADO TOTALMENTE BLINDADO
+# 3. ALGORITMO INTEGRADO
 def evaluar_potencial_crecimiento(lat, lon):
-    # Retrocedemos 7 a 14 días para asegurar que la NASA ya procesó los datos satelitales globales
     end_date = (datetime.today() - timedelta(days=7)).strftime('%Y%m%d')
     start_date = (datetime.today() - timedelta(days=14)).strftime('%Y%m%d')
     
@@ -161,7 +166,6 @@ def evaluar_potencial_crecimiento(lat, lon):
     if df_nasa is None or df_nasa.empty or datos_suelo is None:
         return None
         
-    # BLINDAJE MATEMÁTICO: Extraemos con .get y fallback a 0.0 para evitar errores de comparación
     humedad_raiz = datos_suelo.get('soil_moisture_28_to_100cm', 0.0)
     if humedad_raiz is None: 
         humedad_raiz = 0.0
@@ -169,19 +173,18 @@ def evaluar_potencial_crecimiento(lat, lon):
     radiacion_promedio = df_nasa['ALLSKY_SFC_SW_DWN'].mean() if 'ALLSKY_SFC_SW_DWN' in df_nasa else 0.0
     lluvia_acumulada = df_nasa['PRECTOTCORR'].sum() if 'PRECTOTCORR' in df_nasa else 0.0
     
-    # Cruce de Variables
     if radiacion_promedio > 15 and humedad_raiz > 0.25:
         estado = "🟢 Óptimo"
-        mensaje = "Alta energía solar respaldada por excelente reserva de agua profunda. El cultivo está en condiciones ideales para máxima fotosíntesis y rendimiento."
+        mensaje = "Alta energía solar respaldada por excelente reserva de agua profunda. El cultivo está en condiciones ideales."
     elif radiacion_promedio > 15 and humedad_raiz < 0.15:
         estado = "🔴 Alerta Crítica (Estrés Termo-Hídrico)"
-        mensaje = "Alta radiación solar pero el acuífero radicular está severamente agotado. Riesgo inminente de marchitez permanente. Active el riego de inmediato."
+        mensaje = "Alta radiación solar pero el acuífero radicular está severamente agotado. Riesgo inminente de marchitez."
     elif radiacion_promedio <= 15 and humedad_raiz > 0.30:
         estado = "🟡 Alerta Fúngica"
-        mensaje = "Baja radiación solar (fuerte nubosidad) y suelo saturado de agua. Las raíces corren riesgo de asfixia y existe un ambiente ideal para la proliferación de hongos patógenos."
+        mensaje = "Baja radiación solar y suelo saturado de agua. Las raíces corren riesgo de asfixia y proliferación de hongos."
     else:
         estado = "🔵 Moderado"
-        mensaje = "Condiciones de crecimiento estándar. Continúe con sus prácticas de manejo habituales y monitoree si la humedad disminuye en los próximos días."
+        mensaje = "Condiciones de crecimiento estándar. Continúe con sus prácticas de manejo habituales."
         
     return {
         "estado": estado,
@@ -250,7 +253,7 @@ elif opcion_menu == "Suelo":
         st.markdown("### 💧 Humedad Volumétrica del Suelo (m³/m³)")
         ch1, ch2, ch3, ch4 = st.columns(4)
         
-        # Extracción segura
+        # Extracción totalmente blindada
         m_0_7 = datos_suelo.get('soil_moisture_0_to_7cm')
         m_7_28 = datos_suelo.get('soil_moisture_7_to_28cm')
         m_28_100 = datos_suelo.get('soil_moisture_28_to_100cm')
@@ -265,10 +268,11 @@ elif opcion_menu == "Suelo":
         st.markdown("### 🌡️ Temperatura del Perfil del Suelo (°C)")
         ct1, ct2, ct3, ct4 = st.columns(4)
         
+        # Corrección del NameError ('datos' -> 'datos_suelo')
         t_0_7 = datos_suelo.get('soil_temperature_0_to_7cm')
-        t_7_28 = datos.get('soil_temperature_7_to_28cm')
-        t_28_100 = datos.get('soil_temperature_28_to_100cm')
-        t_100_255 = datos.get('soil_temperature_100_to_255cm')
+        t_7_28 = datos_suelo.get('soil_temperature_7_to_28cm')
+        t_28_100 = datos_suelo.get('soil_temperature_28_to_100cm')
+        t_100_255 = datos_suelo.get('soil_temperature_100_to_255cm')
         
         ct1.metric("0 - 7 cm (Superficie)", f"{t_0_7} °C" if t_0_7 is not None else "N/D")
         ct2.metric("7 - 28 cm (Zona Fúngica)", f"{t_7_28} °C" if t_7_28 is not None else "N/D")
