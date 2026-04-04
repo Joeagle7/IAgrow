@@ -46,40 +46,59 @@ try:
 except Exception as e:
     gemini_activo = False
 
-# --- 2. DISEÑO UI/UX CORPORATIVO ---
+# --- 2. DISEÑO UI/UX CORPORATIVO (MENÚ MEJORADO) ---
 st.markdown("""
 <style>
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     
-    div[data-testid="stRadio"] > div {
+    /* Contenedor del Menú */
+    div[role="radiogroup"] {
         display: flex;
         flex-direction: row;
-        gap: 30px;
+        gap: 15px;
         background-color: transparent;
+        justify-content: flex-start;
+        align-items: center;
+        border-bottom: 2px solid #e0e0e0;
+        padding-bottom: 0px;
     }
-    div[data-testid="stRadio"] > div > label {
+    
+    /* Estilo de los botones (Pestañas inactivas) */
+    div[role="radiogroup"] > label {
         background-color: transparent !important;
         border: none !important;
-        padding: 5px 0px !important;
-        color: #333333 !important;
-        font-weight: 500 !important;
+        padding: 10px 20px !important;
+        color: #555555 !important;
+        font-weight: 600 !important;
         font-size: 16px !important;
         cursor: pointer;
-        border-radius: 0px !important;
-        box-shadow: none !important;
+        border-radius: 5px 5px 0px 0px !important;
+        border-bottom: 4px solid transparent !important; /* Barra invisible para mantener tamaño */
+        transition: all 0.3s ease;
+        margin-bottom: -2px; /* Superpone la línea gris del borde */
     }
-    div[data-testid="stRadio"] > div > label:hover {
-        color: #00796B !important;
-    }
-    div[data-testid="stRadio"] > div > label[data-checked="true"] {
-        color: #004D40 !important;
-        border-bottom: 3px solid #00796B !important;
-        font-weight: 700 !important;
-    }
-    div[data-testid="stRadio"] > div > label > div:first-child {
+    
+    /* Ocultar el círculo nativo del Radio Button */
+    div[role="radiogroup"] > label > div:first-child {
         display: none; 
     }
+    
+    /* Hover en pestañas inactivas */
+    div[role="radiogroup"] > label:hover {
+        color: #00796B !important;
+        background-color: #f1f8e9 !important;
+    }
+    
+    /* ESTILO DE LA PESTAÑA ACTIVA (Inversión de color + Barra Inferior) */
+    div[role="radiogroup"] > label:has(input:checked) {
+        background-color: #004D40 !important; /* Fondo Verde Oscuro */
+        color: #ffffff !important;           /* Texto Blanco */
+        border-bottom: 4px solid #00E676 !important; /* Barra Inferior Verde Brillante */
+        font-weight: 700 !important;
+    }
+    
+    /* Tarjetas de métricas */
     .stMetric { 
         background: #ffffff; 
         border-radius: 8px; 
@@ -96,14 +115,14 @@ with c_logo:
     st.markdown("<h2 style='color: #2E7D32; margin-top: 0;'>🌿 AgroIA</h2>", unsafe_allow_html=True)
 
 with c_menu:
-    # Solución al Warning de Accesibilidad de Streamlit (Agregamos "Navegación")
+    # Etiqueta visible a nivel de código para evitar Warnings, pero colapsada en la UI
     opcion_menu = st.radio(
-        "Navegación", 
+        "Navegación Principal", 
         ["Mapa", "Meteorología", "Suelo", "Estado de la Planta", "Satélite", "Diagnóstico IA"],
         horizontal=True,
         label_visibility="collapsed"
     )
-st.markdown("---") 
+st.markdown("<br>", unsafe_allow_html=True) 
 
 # --- FUNCIONES AUXILIARES Y APIs ---
 def grados_a_direccion(grados):
@@ -120,21 +139,32 @@ def obtener_datos_clima(lat, lon):
     try: return requests.get(url).json()
     except: return None
 
-# 1. API COPERNICUS ERA5-LAND (NUEVO PARSEADOR ANTI-VACÍOS)
+# 1. API COPERNICUS CON CAPTURA DE TIEMPO (TIMESTAMP)
 def obtener_datos_suelo_copernicus(lat, lon):
-    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=soil_temperature_0_to_7cm,soil_temperature_7_to_28cm,soil_temperature_28_to_100cm,soil_temperature_100_to_255cm,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm,soil_moisture_28_to_100cm,soil_moisture_100_to_255cm&timezone=America/Guayaquil"
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=soil_temperature_0_to_7cm,soil_temperature_7_to_28cm,soil_temperature_28_to_100cm,soil_temperature_100_to_255cm,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm,soil_moisture_28_to_100cm,soil_moisture_100_to_255cm&models=ecmwf_ifs&timezone=America/Guayaquil"
     try: 
         respuesta = requests.get(url, timeout=10)
         if respuesta.status_code == 200:
             data = respuesta.json()
-            if 'hourly' in data:
+            if 'hourly' in data and 'time' in data['hourly']:
+                tiempos = data['hourly']['time']
+                humedad_sup = data['hourly'].get('soil_moisture_0_to_7cm', [])
+                
+                # Buscamos el índice del primer dato que NO sea nulo (vacío)
+                idx_valido = 0
+                for i, val in enumerate(humedad_sup):
+                    if val is not None:
+                        idx_valido = i
+                        break
+                
+                # Extraemos el valor de ese índice exacto para todas las variables
                 resultado_limpio = {}
-                # Filtramos la lista para encontrar el primer dato que NO sea nulo
                 for key, values in data['hourly'].items():
-                    if isinstance(values, list):
-                        valores_validos = [x for x in values if x is not None]
-                        if valores_validos:
-                            resultado_limpio[key] = valores_validos[0]
+                    if isinstance(values, list) and len(values) > idx_valido:
+                        resultado_limpio[key] = values[idx_valido]
+                        
+                # Guardamos la marca de tiempo (timestamp)
+                resultado_limpio['timestamp_extraido'] = tiempos[idx_valido]
                 return resultado_limpio
         return None
     except: return None
@@ -178,7 +208,7 @@ def evaluar_potencial_crecimiento(lat, lon):
         mensaje = "Alta energía solar respaldada por excelente reserva de agua profunda. El cultivo está en condiciones ideales."
     elif radiacion_promedio > 15 and humedad_raiz < 0.15:
         estado = "🔴 Alerta Crítica (Estrés Termo-Hídrico)"
-        mensaje = "Alta radiación solar pero el acuífero radicular está severamente agotado. Riesgo inminente de marchitez."
+        mensaje = "Alta radiación solar pero el acuífero radicular está severamente agotado. Riesgo inminente de marchitez permanente."
     elif radiacion_promedio <= 15 and humedad_raiz > 0.30:
         estado = "🟡 Alerta Fúngica"
         mensaje = "Baja radiación solar y suelo saturado de agua. Las raíces corren riesgo de asfixia y proliferación de hongos."
@@ -250,10 +280,16 @@ elif opcion_menu == "Suelo":
     datos_suelo = obtener_datos_suelo_copernicus(st.session_state.lat, st.session_state.lon)
     
     if datos_suelo:
+        # Extraer y formatear la estampa de tiempo
+        ts = datos_suelo.get('timestamp_extraido')
+        if ts:
+            dt_obj = datetime.strptime(ts, "%Y-%m-%dT%H:%M")
+            fecha_formateada = dt_obj.strftime("%d de %B de %Y a las %H:%M")
+            st.success(f"⏱️ **Lectura Satelital Procesada:** Los siguientes datos corresponden al **{fecha_formateada}**.")
+            
         st.markdown("### 💧 Humedad Volumétrica del Suelo (m³/m³)")
         ch1, ch2, ch3, ch4 = st.columns(4)
         
-        # Extracción totalmente blindada
         m_0_7 = datos_suelo.get('soil_moisture_0_to_7cm')
         m_7_28 = datos_suelo.get('soil_moisture_7_to_28cm')
         m_28_100 = datos_suelo.get('soil_moisture_28_to_100cm')
@@ -268,11 +304,10 @@ elif opcion_menu == "Suelo":
         st.markdown("### 🌡️ Temperatura del Perfil del Suelo (°C)")
         ct1, ct2, ct3, ct4 = st.columns(4)
         
-        # Corrección del NameError ('datos' -> 'datos_suelo')
         t_0_7 = datos_suelo.get('soil_temperature_0_to_7cm')
-        t_7_28 = datos_suelo.get('soil_temperature_7_to_28cm')
-        t_28_100 = datos_suelo.get('soil_temperature_28_to_100cm')
-        t_100_255 = datos_suelo.get('soil_temperature_100_to_255cm')
+        t_7_28 = datos.get('soil_temperature_7_to_28cm')
+        t_28_100 = datos.get('soil_temperature_28_to_100cm')
+        t_100_255 = datos.get('soil_temperature_100_to_255cm')
         
         ct1.metric("0 - 7 cm (Superficie)", f"{t_0_7} °C" if t_0_7 is not None else "N/D")
         ct2.metric("7 - 28 cm (Zona Fúngica)", f"{t_7_28} °C" if t_7_28 is not None else "N/D")
