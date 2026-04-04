@@ -74,37 +74,42 @@ st.markdown("""
         font-size: 16px !important;
         cursor: pointer;
         border-radius: 5px 5px 0px 0px !important;
-        border-bottom: 4px solid transparent !important; /* Barra invisible para mantener tamaño */
+        border-bottom: 4px solid transparent !important;
         transition: all 0.3s ease;
-        margin-bottom: -2px; /* Superpone la línea gris del borde */
+        margin-bottom: -2px;
     }
     
-    /* Ocultar el círculo nativo del Radio Button */
     div[role="radiogroup"] > label > div:first-child {
         display: none; 
     }
     
-    /* Hover en pestañas inactivas */
     div[role="radiogroup"] > label:hover {
         color: #00796B !important;
         background-color: #f1f8e9 !important;
     }
     
-    /* ESTILO DE LA PESTAÑA ACTIVA (Inversión de color + Barra Inferior) */
+    /* ESTILO DE LA PESTAÑA ACTIVA */
     div[role="radiogroup"] > label:has(input:checked) {
-        background-color: #004D40 !important; /* Fondo Verde Oscuro */
-        color: #ffffff !important;           /* Texto Blanco */
-        border-bottom: 4px solid #00E676 !important; /* Barra Inferior Verde Brillante */
+        background-color: #004D40 !important; 
+        color: #ffffff !important;           
+        border-bottom: 4px solid #00E676 !important; 
         font-weight: 700 !important;
     }
     
-    /* Tarjetas de métricas */
     .stMetric { 
         background: #ffffff; 
         border-radius: 8px; 
         padding: 15px; 
         border-left: 5px solid #009688;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    
+    /* Estilo para las descripciones cortas debajo de las métricas */
+    .metric-caption {
+        font-size: 0.85rem;
+        color: #666666;
+        margin-top: -10px;
+        padding-left: 15px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -115,7 +120,6 @@ with c_logo:
     st.markdown("<h2 style='color: #2E7D32; margin-top: 0;'>🌿 AgroIA</h2>", unsafe_allow_html=True)
 
 with c_menu:
-    # Etiqueta visible a nivel de código para evitar Warnings, pero colapsada en la UI
     opcion_menu = st.radio(
         "Navegación Principal", 
         ["Mapa", "Meteorología", "Suelo", "Estado de la Planta", "Satélite", "Diagnóstico IA"],
@@ -139,7 +143,7 @@ def obtener_datos_clima(lat, lon):
     try: return requests.get(url).json()
     except: return None
 
-# 1. API COPERNICUS CON CAPTURA DE TIEMPO (TIMESTAMP)
+# 1. API COPERNICUS CON CAPTURA DE TIEMPO
 def obtener_datos_suelo_copernicus(lat, lon):
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=soil_temperature_0_to_7cm,soil_temperature_7_to_28cm,soil_temperature_28_to_100cm,soil_temperature_100_to_255cm,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm,soil_moisture_28_to_100cm,soil_moisture_100_to_255cm&models=ecmwf_ifs&timezone=America/Guayaquil"
     try: 
@@ -150,20 +154,17 @@ def obtener_datos_suelo_copernicus(lat, lon):
                 tiempos = data['hourly']['time']
                 humedad_sup = data['hourly'].get('soil_moisture_0_to_7cm', [])
                 
-                # Buscamos el índice del primer dato que NO sea nulo (vacío)
                 idx_valido = 0
                 for i, val in enumerate(humedad_sup):
                     if val is not None:
                         idx_valido = i
                         break
                 
-                # Extraemos el valor de ese índice exacto para todas las variables
                 resultado_limpio = {}
                 for key, values in data['hourly'].items():
                     if isinstance(values, list) and len(values) > idx_valido:
                         resultado_limpio[key] = values[idx_valido]
                         
-                # Guardamos la marca de tiempo (timestamp)
                 resultado_limpio['timestamp_extraido'] = tiempos[idx_valido]
                 return resultado_limpio
         return None
@@ -280,12 +281,11 @@ elif opcion_menu == "Suelo":
     datos_suelo = obtener_datos_suelo_copernicus(st.session_state.lat, st.session_state.lon)
     
     if datos_suelo:
-        # Extraer y formatear la estampa de tiempo
         ts = datos_suelo.get('timestamp_extraido')
         if ts:
             dt_obj = datetime.strptime(ts, "%Y-%m-%dT%H:%M")
             fecha_formateada = dt_obj.strftime("%d de %B de %Y a las %H:%M")
-            st.success(f"⏱️ **Lectura Satelital Procesada:** Los siguientes datos corresponden al **{fecha_formateada}**.")
+            st.success(f"⏱️ **Lectura Satelital Procesada:** Los datos corresponden al **{fecha_formateada}**.")
             
         st.markdown("### 💧 Humedad Volumétrica del Suelo (m³/m³)")
         ch1, ch2, ch3, ch4 = st.columns(4)
@@ -304,10 +304,11 @@ elif opcion_menu == "Suelo":
         st.markdown("### 🌡️ Temperatura del Perfil del Suelo (°C)")
         ct1, ct2, ct3, ct4 = st.columns(4)
         
+        # ERROR CORREGIDO AQUI: usamos datos_suelo en todas las líneas
         t_0_7 = datos_suelo.get('soil_temperature_0_to_7cm')
-        t_7_28 = datos.get('soil_temperature_7_to_28cm')
-        t_28_100 = datos.get('soil_temperature_28_to_100cm')
-        t_100_255 = datos.get('soil_temperature_100_to_255cm')
+        t_7_28 = datos_suelo.get('soil_temperature_7_to_28cm')
+        t_28_100 = datos_suelo.get('soil_temperature_28_to_100cm')
+        t_100_255 = datos_suelo.get('soil_temperature_100_to_255cm')
         
         ct1.metric("0 - 7 cm (Superficie)", f"{t_0_7} °C" if t_0_7 is not None else "N/D")
         ct2.metric("7 - 28 cm (Zona Fúngica)", f"{t_7_28} °C" if t_7_28 is not None else "N/D")
@@ -329,9 +330,20 @@ elif opcion_menu == "Estado de la Planta":
         
         st.markdown("---")
         c1, c2, c3 = st.columns(3)
-        c1.metric("☀️ Energía PAR (NASA)", f"{resultado_sinergia['radiacion']} MJ/m²/día", help="Promedio de Radiación Solar de la última semana disponible.")
-        c2.metric("💧 Reserva Profunda (Copernicus)", f"{resultado_sinergia['humedad']} m³/m³", help="Humedad del suelo a profundidad de 28 a 100 cm.")
-        c3.metric("🌧️ Lluvia Acumulada (NASA)", f"{resultado_sinergia['lluvia']} mm", help="Precipitación acumulada de la última semana disponible.")
+        
+        # INTERFAZ ACTUALIZADA: Quitamos los 'help' e incluimos la descripción clara debajo
+        with c1:
+            st.metric("☀️ Energía PAR (NASA)", f"{resultado_sinergia['radiacion']} MJ/m²/día")
+            st.markdown('<div class="metric-caption">Promedio de Radiación Solar (últimos 7 días)</div>', unsafe_allow_html=True)
+            
+        with c2:
+            st.metric("💧 Reserva Profunda (Copernicus)", f"{resultado_sinergia['humedad']} m³/m³")
+            st.markdown('<div class="metric-caption">Humedad en zona radicular profunda (28-100 cm)</div>', unsafe_allow_html=True)
+            
+        with c3:
+            st.metric("🌧️ Lluvia Acumulada (NASA)", f"{resultado_sinergia['lluvia']} mm")
+            st.markdown('<div class="metric-caption">Precipitación total acumulada (últimos 7 días)</div>', unsafe_allow_html=True)
+            
     else:
         st.error("❌ Error de comunicación con los servidores espaciales. Verifique las coordenadas.")
 
