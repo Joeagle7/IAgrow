@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import folium
-from folium.plugins import Draw
 from streamlit_folium import st_folium
 import requests
 from streamlit_geolocation import streamlit_geolocation
@@ -16,10 +15,13 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # --- 1. CONFIGURACIÓN Y ESTADO DE MEMORIA ---
+# Fondo Negro y Consistencia Universal (Modificación de Estilo)
 st.set_page_config(page_title="AgroIA", page_icon="🌿", layout="wide")
 
 if "lat" not in st.session_state: st.session_state.lat = -2.1962
 if "lon" not in st.session_state: st.session_state.lon = -79.8862
+if "temp_coords" not in st.session_state: st.session_state.temp_coords = []
+if "nombre_lote_global" not in st.session_state: st.session_state.nombre_lote_global = ""
 
 @st.cache_resource
 def inicializar_google_earth_engine():
@@ -48,12 +50,19 @@ try:
 except Exception as e:
     gemini_activo = False
 
-# --- 2. DISEÑO UI/UX CORPORATIVO ---
+# --- 2. DISEÑO UI/UX CORPORATIVO (PALETA OSCURA/MENÚ MEJORADO) ---
 st.markdown("""
 <style>
+    /* Fondo Negro Obligatorio en toda la página */
+    .stApp {
+        background-color: #000000;
+        color: #ffffff;
+    }
+    
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     
+    /* Contenedor del Menú (Adaptado a fondo negro) */
     div[role="radiogroup"] {
         display: flex;
         flex-direction: row;
@@ -61,15 +70,16 @@ st.markdown("""
         background-color: transparent;
         justify-content: flex-start;
         align-items: center;
-        border-bottom: 2px solid #e0e0e0;
+        border-bottom: 2px solid #333333;
         padding-bottom: 0px;
     }
     
+    /* Estilo de los botones (Pestañas inactivas - Paleta Oscura) */
     div[role="radiogroup"] > label {
         background-color: transparent !important;
         border: none !important;
         padding: 10px 20px !important;
-        color: #555555 !important;
+        color: #aaaaaa !important; /* Texto gris claro */
         font-weight: 600 !important;
         font-size: 16px !important;
         cursor: pointer;
@@ -83,32 +93,55 @@ st.markdown("""
         display: none; 
     }
     
+    /* Hover en pestañas inactivas sobre fondo negro */
     div[role="radiogroup"] > label:hover {
-        color: #00796B !important;
-        background-color: #f1f8e9 !important;
+        color: #4DB6AC !important; /* Turquesa más claro para contraste */
+        background-color: #1a1a1a !important; /* Gris muy oscuro */
     }
     
+    /* ESTILO DE LA PESTAÑA ACTIVA */
     div[role="radiogroup"] > label:has(input:checked) {
-        background-color: #004D40 !important; 
+        background-color: #00796B !important; /* Turquesa Oscuro */
         color: #ffffff !important;           
-        border-bottom: 4px solid #00E676 !important; 
+        border-bottom: 4px solid #00E676 !important; /* Barra Inferior Verde Brillante */
         font-weight: 700 !important;
     }
     
+    /* Tarjetas de métricas oscuras */
     .stMetric { 
-        background: #ffffff; 
+        background: #121212; 
         border-radius: 8px; 
         padding: 15px; 
         border-left: 5px solid #009688;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        color: #ffffff !important;
     }
     
+    div[data-testid="stMetricValue"] > div {
+        color: #ffffff !important;
+    }
+    div[data-testid="stMetricLabel"] > div {
+        color: #aaaaaa !important;
+    }
+    
+    /* Estilo para las descripciones cortas debajo de las métricas */
     .metric-caption {
         font-size: 0.85rem;
-        color: #666666;
+        color: #aaaaaa;
         margin-top: -10px;
         padding-left: 15px;
     }
+    
+    /* Títulos generales */
+    h1, h2, h3, h4, .stMarkdown {
+        color: #ffffff;
+    }
+    
+    /* Estilo para los botones grandes de mapeo */
+    .stButton > button {
+        border-radius: 5px;
+    }
+    
 </style>
 """, unsafe_allow_html=True)
 
@@ -141,6 +174,7 @@ def obtener_datos_clima(lat, lon):
     try: return requests.get(url).json()
     except: return None
 
+# 1. API COPERNICUS CON CAPTURA DE TIEMPO
 def obtener_datos_suelo_copernicus(lat, lon):
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=soil_temperature_0_to_7cm,soil_temperature_7_to_28cm,soil_temperature_28_to_100cm,soil_temperature_100_to_255cm,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm,soil_moisture_28_to_100cm,soil_moisture_100_to_255cm&models=ecmwf_ifs&timezone=America/Guayaquil"
     try: 
@@ -167,6 +201,7 @@ def obtener_datos_suelo_copernicus(lat, lon):
         return None
     except: return None
 
+# 2. API NASA POWER
 def obtener_datos_nasa_power(lat, lon, start_date, end_date):
     url = f"https://power.larc.nasa.gov/api/temporal/daily/point?parameters=ALLSKY_SFC_SW_DWN,PRECTOTCORR&community=AG&longitude={lon}&latitude={lat}&start={start_date}&end={end_date}&format=JSON"
     try:
@@ -182,6 +217,7 @@ def obtener_datos_nasa_power(lat, lon, start_date, end_date):
     except:
         return None
 
+# 3. ALGORITMO INTEGRADO
 def evaluar_potencial_crecimiento(lat, lon):
     end_date = (datetime.today() - timedelta(days=7)).strftime('%Y%m%d')
     start_date = (datetime.today() - timedelta(days=14)).strftime('%Y%m%d')
@@ -227,9 +263,14 @@ def calcular_area_hectareas(coordenadas):
         return 0.0
     radio_tierra = 6378137.0 # metros
     area = 0.0
-    for i in range(len(coordenadas) - 1):
-        lon1, lat1 = math.radians(coordenadas[i][0]), math.radians(coordenadas[i][1])
-        lon2, lat2 = math.radians(coordenadas[i+1][0]), math.radians(coordenadas[i+1][1])
+    # Asegurar que el polígono esté cerrado para el cálculo
+    temp_coords = coordenadas[:]
+    if temp_coords[0] != temp_coords[-1]:
+        temp_coords.append(temp_coords[0])
+        
+    for i in range(len(temp_coords) - 1):
+        lon1, lat1 = math.radians(temp_coords[i][0]), math.radians(temp_coords[i][1])
+        lon2, lat2 = math.radians(temp_coords[i+1][0]), math.radians(temp_coords[i+1][1])
         area += (lon2 - lon1) * (2.0 + math.sin(lat1) + math.sin(lat2))
     area = abs(area * radio_tierra * radio_tierra / 2.0)
     return area / 10000.0 # Conversión de m² a Hectáreas
@@ -254,6 +295,8 @@ if opcion_menu == "Mapa":
 
     st.write("Haga **clic** sobre su parcela en el mapa para afinar la ubicación.")
     m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=14)
+    # Azulejo oscuro para mapa base (contraste con el fondo negro)
+    folium.TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base').add_to(m)
     folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="green", icon="leaf")).add_to(m)
     output = st_folium(m, width=1000, height=450, key="mapa_principal", returned_objects=["last_clicked"])
 
@@ -280,8 +323,9 @@ elif opcion_menu == "Meteorología":
             'Prob_Lluvia (%)': json_clima['hourly']['precipitation_probability'],
             'Evapotranspiración (mm)': json_clima['hourly']['et0_fao_evapotranspiration']
         })
-        st.plotly_chart(px.line(df_hourly, x='Fecha_Hora', y='Evapotranspiración (mm)', title="Estrés Atmosférico (Evapotranspiración)", template="plotly_white", color_discrete_sequence=['#FF7043']), use_container_width=True)
-        st.plotly_chart(px.bar(df_hourly, x='Fecha_Hora', y='Prob_Lluvia (%)', title="Probabilidad de Precipitación", template="plotly_white", color_discrete_sequence=['#42A5F5']), use_container_width=True)
+        # Gráficos adaptados a fondo oscuro (Plotly template "plotly_dark")
+        st.plotly_chart(px.line(df_hourly, x='Fecha_Hora', y='Evapotranspiración (mm)', title="Demanda Hídrica y Estrés Atmosférico (Evapotranspiración FAO)", template="plotly_dark", color_discrete_sequence=['#FF7043']), use_container_width=True)
+        st.plotly_chart(px.bar(df_hourly, x='Fecha_Hora', y='Prob_Lluvia (%)', title="Certidumbre y Probabilidad de Precipitación (%)", template="plotly_dark", color_discrete_sequence=['#42A5F5']), use_container_width=True)
 
 elif opcion_menu == "Suelo":
     st.subheader(f"🌍 Perfil Físico del Suelo (ERA5-Land: Copernicus)")
@@ -299,6 +343,7 @@ elif opcion_menu == "Suelo":
         st.markdown("### 💧 Humedad Volumétrica del Suelo (m³/m³)")
         ch1, ch2, ch3, ch4 = st.columns(4)
         
+        # Extracción totalmente blindada
         m_0_7 = datos_suelo.get('soil_moisture_0_to_7cm')
         m_7_28 = datos_suelo.get('soil_moisture_7_to_28cm')
         m_28_100 = datos_suelo.get('soil_moisture_28_to_100cm')
@@ -313,6 +358,7 @@ elif opcion_menu == "Suelo":
         st.markdown("### 🌡️ Temperatura del Perfil del Suelo (°C)")
         ct1, ct2, ct3, ct4 = st.columns(4)
         
+        # ERROR CORREGIDO AQUI: usamos datos_suelo en todas las líneas y blindaje N/D
         t_0_7 = datos_suelo.get('soil_temperature_0_to_7cm')
         t_7_28 = datos_suelo.get('soil_temperature_7_to_28cm')
         t_28_100 = datos_suelo.get('soil_temperature_28_to_100cm')
@@ -323,7 +369,7 @@ elif opcion_menu == "Suelo":
         ct3.metric("28 - 100 cm", f"{t_28_100} °C" if t_28_100 is not None else "N/D")
         ct4.metric("100 - 289 cm", f"{t_100_255} °C" if t_100_255 is not None else "N/D")
     else:
-        st.error("❌ Error de comunicación con los servidores satelitales. Asegúrese de ingresar coordenadas válidas.")
+        st.error("❌ Error de comunicación con los servidores satelitales. Asegúrese de ingresar coordenadas válidas continentales.")
 
 elif opcion_menu == "Estado de la Planta":
     st.subheader("⚡ Potencial de Crecimiento y Estado Termo-Hídrico")
@@ -379,118 +425,158 @@ elif opcion_menu == "Satélite":
                     map_id_dict = ee.Image(ndvi).getMapId(vis_params)
                     
                     m_ndvi = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=15, max_zoom=20)
-                    folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base', overlay=False, max_zoom=20).add_to(m_ndvi)
+                    folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base').add_to(m_ndvi)
                     folium.TileLayer(tiles=map_id_dict['tile_fetcher'].url_format, attr='Google Earth Engine', name='NDVI', overlay=True, opacity=0.7, max_zoom=20, max_native_zoom=16).add_to(m_ndvi)
                     folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="red")).add_to(m_ndvi)
                     st_folium(m_ndvi, width=1000, height=450, key="mapa_ndvi")
             except Exception as e:
                 st.error(f"❌ Error satelital: {e}")
 
-# NUEVA SECCIÓN DE DIAGNÓSTICO IA (CON MAPA DE POLÍGONOS)
+# NUEVA SECCIÓN DE DIAGNÓSTICO IA (IMPLEMENTACIÓN DE "ESTACADO DIGITAL")
 elif opcion_menu == "Diagnóstico IA":
     st.subheader("🤖 Diagnóstico Fitosanitario y Dosificación (IA)")
     st.warning("**⚠️ Aviso Legal:** Los resultados son probabilísticos. Verifique con un agrónomo.")
+    
+    # 1. GPS Y MI UBICACIÓN
+    st.markdown("### 1. Geolocalice su Lote")
+    c_desc_gps, c_btn_gps = st.columns([4, 1])
+    with c_desc_gps:
+        st.write("Presione el botón para capturar las coordenadas exactas donde se encuentra parado en este momento. Esto centrará el mapa.")
+    with c_btn_gps:
+        # El botón nativo de geolocalización que sí funciona en móviles
+        ubicacion_gps = streamlit_geolocation(key="diag_gps_btn")
+        if ubicacion_gps['latitude'] is not None:
+            # Actualizamos sesión y forzamos recarga del mapa centrado
+            st.session_state.lat = round(ubicacion_gps['latitude'], 4)
+            st.session_state.lon = round(ubicacion_gps['longitude'], 4)
+            st.session_state.last_marker = [st.session_state.lat, st.session_state.lon]
+
+    # 2. DELIMITACIÓN INTERACTIVA (EL "ESTACADO VIRTUAL")
+    st.markdown("### 2. Delimite su Terreno")
+    st.write("Use los botones a continuación para construir el perímetro de su lote punto por punto.")
+    
+    c_btn_marcar, c_btn_deshacer, c_btn_cerrar = st.columns(3)
+    
+    # Lógica de estados de mapeo (Puntos + Polígono)
+    puntos_mapeo = st.session_state.temp_coords
+    poligono_cerrado = False
+    
+    with c_btn_marcar:
+        if st.button("📍 Marcar Esquina actual (GPS)", key="btn_marcar_punto", use_container_width=True):
+            # Guardamos la coordenada centradora actual
+            puntos_mapeo.append([st.session_state.lon, st.session_state.lat]) # Folium usa [lon, lat] internamente
+            st.session_state.temp_coords = puntos_mapeo
+            # Forzamos recarga de la app para ver el punto en el mapa
+            st.rerun()
+
+    with c_btn_deshacer:
+        if st.button("↩️ Corregir Último Punto", key="btn_deshacer_punto", use_container_width=True):
+            if puntos_mapeo:
+                puntos_mapeo.pop()
+                st.session_state.temp_coords = puntos_mapeo
+                st.rerun()
+
+    with c_btn_cerrar:
+        if len(puntos_mapeo) >= 3:
+            if st.button("✅ Cerrar Terreno y Calcular Área", key="btn_cerrar_poligono", use_container_width=True):
+                # Unimos el último punto con el primero para cerrar la figura
+                puntos_mapeo.append(puntos_mapeo[0])
+                st.session_state.temp_coords = puntos_mapeo
+                st.rerun()
+    
+    # 3. EL MAPA DE CONSTRUCCIÓN
+    # El mapa base es oscuro para mantener el diseño
+    m_diag = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=16, max_zoom=20)
+    folium.TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base').add_to(m_diag)
+    
+    # Dibujamos las "estacas" y la "línea elástica" si hay puntos
+    if puntos_mapeo:
+        # Dibujamos vértices (estacas numeradas)
+        for i, punto in enumerate(puntos_mapeo):
+            # Folium [lat, lon]
+            folium.Marker([punto[1], punto[0]], icon=folium.DivIcon(html=f'<div style="font-size: 14pt; color: white; background-color: blue; border-radius: 50%; width: 25px; height: 25px; text-align: center; font-weight: bold; border: 2px solid white;">{i+1}</div>')).add_to(m_diag)
+        
+        # Dibujamos la línea que los une (polilínea)
+        coordenadas_linea = [[p[1], p[0]] for p in puntos_mapeo] # Folium usa [lat, lon]
+        if len(puntos_mapeo) > 1:
+            if puntos_mapeo[0] == puntos_mapeo[-1]: # Si está cerrado
+                folium.Polygon(locations=coordenadas_linea, color="#00E676", weight=3, fill=True, fill_color="#00E676", fill_opacity=0.3).add_to(m_diag)
+                poligono_cerrado = True
+            else: # Si está abierto
+                folium.PolyLine(locations=coordenadas_linea, color="#2196F3", weight=3, dash_array='5, 5').add_to(m_diag)
+    
+    # Usamos returned_objects vacío para que no recargue constantemente, solo cuando los botones de Streamlit lo forcén
+    st_folium(m_diag, width=1000, height=450, key="mapa_diagnostico_puntos", returned_objects=[])
+    
+    # Cálculo de área si está cerrado
+    area_calculada = 0.0
+    if poligono_cerrado:
+        # Usamos coordenadas [lon, lat] para la función matemática
+        area_calculada = calcular_area_hectareas(puntos_mapeo[:-1])
+        st.success(f"✅ Terreno delimitado con éxito. Superficie detectada por satélite: **{area_calculada:.2f} Hectáreas**")
+
+    st.markdown("---")
+
+    # 4. FORMULARIO DE DIAGNÓSTICO
+    st.markdown("### 3. Reporte Fitosanitario")
     
     elevacion_actual = obtener_elevacion(st.session_state.lat, st.session_state.lon)
     clima_actual = obtener_datos_clima(st.session_state.lat, st.session_state.lon)
     clima_texto = "No disponible"
     if clima_actual and 'current_weather' in clima_actual:
         clima_texto = f"{clima_actual['current_weather']['temperature']}°C, Humedad {clima_actual['hourly']['relativehumidity_2m'][0]}%"
-        
-    st.success(f"📍 **Contexto Extraído:** Altitud: {elevacion_actual} m.s.n.m. | 🌤️ **Clima Reciente:** {clima_texto}")
-    st.markdown("---")
     
-    # PASO 1: IDENTIFICACIÓN DEL LOTE
-    st.markdown("### 1. Perfil del Lote")
-    c_lote, c_cultivo, c_dias, c_riego = st.columns(4)
-    with c_lote:
-        nombre_lote = st.text_input("Nombre del Lote:", placeholder="Ej: Lote del Río", help="Asignar un nombre le permitirá llevar un registro histórico de sus tratamientos futuros.")
-    with c_cultivo:
-        cultivo_seleccionado = st.selectbox("Cultivo:", ["Cacao", "Banano", "Arroz", "Maíz", "Otro"])
-        if cultivo_seleccionado == "Otro": cultivo_seleccionado = st.text_input("Especifique:")
-    with c_dias:
-        dias_siembra = st.number_input("Días desde siembra:", min_value=0, value=30)
-    with c_riego:
-        tipo_riego = st.selectbox("Tipo de Riego:", ["Secano", "Goteo", "Aspersión", "Gravedad"])
-
-    # PASO 2: ESTACADO VIRTUAL (Trazado de Polígono)
-    st.markdown("### 2. Delimitación del Terreno")
-    st.write("Utilice la herramienta de polígono (**⬟**) en el mapa para marcar las esquinas de su lote. Al cerrar la figura, calcularemos el área automáticamente.")
-    
-    m_diag = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=16, max_zoom=20)
-    folium.TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base').add_to(m_diag)
-    
-    # Inyectamos la herramienta de dibujo (Solo permitimos Polígonos)
-    Draw(export=False, position='topleft', draw_options={'polyline':False, 'rectangle':False, 'circle':False, 'circlemarker':False, 'marker':False, 'polygon':True}).add_to(m_diag)
-    
-    out_diag = st_folium(m_diag, width=1000, height=450, key="mapa_diagnostico")
-    
-    area_calculada = 0.0
-    if out_diag and out_diag.get('all_drawings'):
-        drawings = out_diag['all_drawings']
-        if len(drawings) > 0:
-            # Extraemos las coordenadas del último polígono dibujado
-            coords = drawings[0]['geometry']['coordinates'][0]
-            area_calculada = calcular_area_hectareas(coords)
-            st.success(f"✅ Área calculada por satélite: **{area_calculada:.2f} Hectáreas**")
-    
-    if area_calculada == 0.0:
-        st.info("ℹ️ Dibuje el perímetro de su parcela en el mapa para poder calcular la dosis exacta de sus tratamientos.")
-
-    st.markdown("---")
-
-    # PASO 3: SÍNTOMAS Y FOTOS
-    st.markdown("### 3. Reporte Fitosanitario")
     c_sint1, c_sint2 = st.columns(2)
     with c_sint1:
-        parte_afectada = st.selectbox("Órgano afectado:", ["Hojas", "Tallo o Tronco", "Fruto o Espiga", "Raíz", "Toda la planta"])
-        dias_sintomas = st.slider("Días con síntomas:", 1, 30, 5)
-        sintomas_texto = st.text_area("Describa el problema detalladamente:")
+        # Sugerimos nombrar el lote para el registro histórico
+        nombre_lote_form = st.text_input("Asigne un nombre a este Lote:", value=st.session_state.nombre_lote_global, placeholder="Ej: Lote de la Loma", help="Nombrar su lote le permitirá guardar este diagnóstico en su historial y analizar cómo afectaron los tratamientos previos en futuras consultas.")
+        if nombre_lote_form: st.session_state.nombre_lote_global = nombre_lote_form
+            
+        parte_afectada = st.selectbox("🍂 Parte afectada:", ["Hojas", "Tallo o Tronco", "Fruto o Espiga", "Raíz", "Toda la planta"])
+        dias_sintomas = st.slider("⏱️ Días con síntomas:", 1, 30, 5)
+        sintomas_texto = st.text_area("✍️ Describa el problema detalladamente:")
     with c_sint2:
-        foto_planta = st.file_uploader("Subir evidencia fotográfica:", type=['jpg', 'jpeg', 'png'])
+        foto_planta = st.file_uploader("📸 Subir foto clara del problema:", type=['jpg', 'jpeg', 'png'])
         if foto_planta is not None: st.image(foto_planta, use_container_width=True)
 
-    # PASO 4: ANÁLISIS IA
-    if st.button("🧠 Ejecutar Diagnóstico Inteligente", use_container_width=True):
+    if st.button("🧠 Analizar Cultivo con IA", use_container_width=True):
         if not gemini_activo:
             st.error("⚠️ La API de Gemini no está configurada.")
-        elif area_calculada == 0.0:
-            st.warning("⚠️ Por favor, dibuje el perímetro de su lote en el mapa satelital arriba para poder calcular la dosis de los insumos.")
+        elif not poligono_cerrado:
+            st.warning("⚠️ Por favor, delimite primero el perímetro de su lote en el mapa (Paso 2) para poder calcular la dosis exacta de los tratamientos.")
         elif len(sintomas_texto) < 5 and not foto_planta:
             st.warning("⚠️ Describa el problema o suba una foto.")
         else:
-            with st.spinner("🧠 Procesando variables climáticas, espaciales y patológicas..."):
+            with st.spinner("🧠 El Sistema Experto está analizando variables climáticas y patológicas..."):
                 try:
                     model = genai.GenerativeModel('gemini-1.5-flash')
-                    nombre_terreno = nombre_lote if nombre_lote else "Lote sin nombre"
+                    nombre_terreno = st.session_state.nombre_lote_global if st.session_state.nombre_lote_global else "Lote sin nombre"
                     
+                    # PROMPT ACTUALIZADO: Forzamos a Gemini a usar el área calculada y calcular dosis totales
                     prompt_experto = f"""
                     Eres un sistema experto en agronomía tropical y fitopatología.
                     
-                    CONTEXTO ESPACIAL Y CLIMÁTICO DEL LOTE:
+                    CONTEXTO ESPACIAL DEL LOTE:
                     - Nombre del Lote: {nombre_terreno}
                     - Área exacta calculada satelitalmente: {area_calculada:.2f} Hectáreas.
-                    - Cultivo: {cultivo_seleccionado} ({dias_siembra} días desde la siembra).
-                    - Riego: {tipo_riego}
+                    - Altitud: {elevacion_actual} m.s.n.m.
                     - Clima reciente: {clima_texto}
                     
-                    SÍNTOMAS REPORTADOS:
-                    - Órgano afectado: {parte_afectada} ({dias_sintomas} días con síntomas).
+                    SÍNTOMAS REPORTADOS POR EL AGRICULTOR:
+                    - Órgano afectado: {parte_afectada}
+                    - Días con síntomas: {dias_sintomas} días
                     - Descripción: {sintomas_texto}
                     
-                    INSTRUCCIONES CRÍTICAS (Chain-of-Thought):
+                    INSTRUCCIONES DE RAZONAMIENTO (Chain-of-Thought):
                     Debes responder SIEMPRE en este formato exacto Markdown:
                     **🔬 ANÁLISIS TÉCNICO:**
-                    [Razonamiento conectando clima, edad y síntomas]
-                    
+                    [Razonamiento conectando altitud, clima y síntomas]
                     **🚨 DIAGNÓSTICO PRELIMINAR:**
                     [2-3 causas probables]
-                    
                     **📋 RECOMENDACIONES DE MANEJO Y DOSIFICACIÓN:**
                     1. **Tratamiento Inmediato:** [Acciones]
-                    2. **Receta Agronómica (CRÍTICO):** Si recomiendas la aplicación de un producto agroquímico u orgánico, DEBES CALCULAR LA DOSIS TOTAL EXACTA para el área de {area_calculada:.2f} Hectáreas de este lote. (Ejemplo: Si la dosis es 2L/ha, indica "Aplique 4.68 L en total").
-                    3. **Manejo Preventivo:** [Acciones agronómicas]
-                    
+                    2. **Receta Agronómica (CRÍTICO):** Si recomiendas un producto químico u orgánico, DEBES CALCULAR LA DOSIS TOTAL EXACTA para el área de {area_calculada:.2f} Hectáreas de este lote. No des solo la dosis por hectárea, haz la multiplicación. (Ejemplo: Si la dosis es 1.5 Kg/ha, indica "Aplique 3.66 Kg en total").
+                    3. **Preventivas:** [Acciones]
                     **⚠️ NIVEL DE URGENCIA:** [Bajo / Medio / Alto / Crítico]
                     """
                     paquete_analisis = [prompt_experto]
@@ -503,4 +589,4 @@ elif opcion_menu == "Diagnóstico IA":
                     st.markdown("---")
                     st.write(respuesta.text)
                 except Exception as e:
-                    st.error(f"❌ Error al procesar el modelo de IA: {e}")
+                    st.error(f"❌ Error de IA: {e}")
