@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import folium
+from folium.plugins import Draw
 from streamlit_folium import st_folium
 import requests
 from streamlit_geolocation import streamlit_geolocation
@@ -10,6 +11,7 @@ from datetime import datetime, timedelta
 import google.generativeai as genai
 from PIL import Image
 import io
+import math
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -46,13 +48,12 @@ try:
 except Exception as e:
     gemini_activo = False
 
-# --- 2. DISEÑO UI/UX CORPORATIVO (MENÚ MEJORADO) ---
+# --- 2. DISEÑO UI/UX CORPORATIVO ---
 st.markdown("""
 <style>
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Contenedor del Menú */
     div[role="radiogroup"] {
         display: flex;
         flex-direction: row;
@@ -64,7 +65,6 @@ st.markdown("""
         padding-bottom: 0px;
     }
     
-    /* Estilo de los botones (Pestañas inactivas) */
     div[role="radiogroup"] > label {
         background-color: transparent !important;
         border: none !important;
@@ -88,7 +88,6 @@ st.markdown("""
         background-color: #f1f8e9 !important;
     }
     
-    /* ESTILO DE LA PESTAÑA ACTIVA */
     div[role="radiogroup"] > label:has(input:checked) {
         background-color: #004D40 !important; 
         color: #ffffff !important;           
@@ -104,7 +103,6 @@ st.markdown("""
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     
-    /* Estilo para las descripciones cortas debajo de las métricas */
     .metric-caption {
         font-size: 0.85rem;
         color: #666666;
@@ -143,7 +141,6 @@ def obtener_datos_clima(lat, lon):
     try: return requests.get(url).json()
     except: return None
 
-# 1. API COPERNICUS CON CAPTURA DE TIEMPO
 def obtener_datos_suelo_copernicus(lat, lon):
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=soil_temperature_0_to_7cm,soil_temperature_7_to_28cm,soil_temperature_28_to_100cm,soil_temperature_100_to_255cm,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm,soil_moisture_28_to_100cm,soil_moisture_100_to_255cm&models=ecmwf_ifs&timezone=America/Guayaquil"
     try: 
@@ -170,7 +167,6 @@ def obtener_datos_suelo_copernicus(lat, lon):
         return None
     except: return None
 
-# 2. API NASA POWER
 def obtener_datos_nasa_power(lat, lon, start_date, end_date):
     url = f"https://power.larc.nasa.gov/api/temporal/daily/point?parameters=ALLSKY_SFC_SW_DWN,PRECTOTCORR&community=AG&longitude={lon}&latitude={lat}&start={start_date}&end={end_date}&format=JSON"
     try:
@@ -186,7 +182,6 @@ def obtener_datos_nasa_power(lat, lon, start_date, end_date):
     except:
         return None
 
-# 3. ALGORITMO INTEGRADO
 def evaluar_potencial_crecimiento(lat, lon):
     end_date = (datetime.today() - timedelta(days=7)).strftime('%Y%m%d')
     start_date = (datetime.today() - timedelta(days=14)).strftime('%Y%m%d')
@@ -224,6 +219,20 @@ def evaluar_potencial_crecimiento(lat, lon):
         "humedad": humedad_raiz,
         "lluvia": round(lluvia_acumulada, 2)
     }
+
+# NUEVA FUNCIÓN: CÁLCULO DE ÁREA DE POLÍGONO EN HECTÁREAS (GEOMETRÍA ESFÉRICA)
+def calcular_area_hectareas(coordenadas):
+    """Calcula el área de un polígono en la superficie terrestre usando trigonometría esférica."""
+    if not coordenadas or len(coordenadas) < 3:
+        return 0.0
+    radio_tierra = 6378137.0 # metros
+    area = 0.0
+    for i in range(len(coordenadas) - 1):
+        lon1, lat1 = math.radians(coordenadas[i][0]), math.radians(coordenadas[i][1])
+        lon2, lat2 = math.radians(coordenadas[i+1][0]), math.radians(coordenadas[i+1][1])
+        area += (lon2 - lon1) * (2.0 + math.sin(lat1) + math.sin(lat2))
+    area = abs(area * radio_tierra * radio_tierra / 2.0)
+    return area / 10000.0 # Conversión de m² a Hectáreas
 
 # --- 3. DESARROLLO DE LAS PÁGINAS ---
 
@@ -304,7 +313,6 @@ elif opcion_menu == "Suelo":
         st.markdown("### 🌡️ Temperatura del Perfil del Suelo (°C)")
         ct1, ct2, ct3, ct4 = st.columns(4)
         
-        # ERROR CORREGIDO AQUI: usamos datos_suelo en todas las líneas
         t_0_7 = datos_suelo.get('soil_temperature_0_to_7cm')
         t_7_28 = datos_suelo.get('soil_temperature_7_to_28cm')
         t_28_100 = datos_suelo.get('soil_temperature_28_to_100cm')
@@ -330,20 +338,15 @@ elif opcion_menu == "Estado de la Planta":
         
         st.markdown("---")
         c1, c2, c3 = st.columns(3)
-        
-        # INTERFAZ ACTUALIZADA: Quitamos los 'help' e incluimos la descripción clara debajo
         with c1:
             st.metric("☀️ Energía PAR (NASA)", f"{resultado_sinergia['radiacion']} MJ/m²/día")
             st.markdown('<div class="metric-caption">Promedio de Radiación Solar (últimos 7 días)</div>', unsafe_allow_html=True)
-            
         with c2:
             st.metric("💧 Reserva Profunda (Copernicus)", f"{resultado_sinergia['humedad']} m³/m³")
             st.markdown('<div class="metric-caption">Humedad en zona radicular profunda (28-100 cm)</div>', unsafe_allow_html=True)
-            
         with c3:
             st.metric("🌧️ Lluvia Acumulada (NASA)", f"{resultado_sinergia['lluvia']} mm")
             st.markdown('<div class="metric-caption">Precipitación total acumulada (últimos 7 días)</div>', unsafe_allow_html=True)
-            
     else:
         st.error("❌ Error de comunicación con los servidores espaciales. Verifique las coordenadas.")
 
@@ -383,80 +386,111 @@ elif opcion_menu == "Satélite":
             except Exception as e:
                 st.error(f"❌ Error satelital: {e}")
 
+# NUEVA SECCIÓN DE DIAGNÓSTICO IA (CON MAPA DE POLÍGONOS)
 elif opcion_menu == "Diagnóstico IA":
-    st.subheader("🤖 Diagnóstico Fitosanitario Asistido por IA")
+    st.subheader("🤖 Diagnóstico Fitosanitario y Dosificación (IA)")
     st.warning("**⚠️ Aviso Legal:** Los resultados son probabilísticos. Verifique con un agrónomo.")
     
     elevacion_actual = obtener_elevacion(st.session_state.lat, st.session_state.lon)
     clima_actual = obtener_datos_clima(st.session_state.lat, st.session_state.lon)
-    
     clima_texto = "No disponible"
     if clima_actual and 'current_weather' in clima_actual:
-        temp = clima_actual['current_weather']['temperature']
-        hum = clima_actual['hourly']['relativehumidity_2m'][0]
-        clima_texto = f"{temp}°C, Humedad {hum}%"
+        clima_texto = f"{clima_actual['current_weather']['temperature']}°C, Humedad {clima_actual['hourly']['relativehumidity_2m'][0]}%"
         
     st.success(f"📍 **Contexto Extraído:** Altitud: {elevacion_actual} m.s.n.m. | 🌤️ **Clima Reciente:** {clima_texto}")
     st.markdown("---")
     
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        cultivo_seleccionado = st.selectbox("🌱 Cultivo", ["Cacao", "Banano", "Arroz", "Maíz", "Otro"])
+    # PASO 1: IDENTIFICACIÓN DEL LOTE
+    st.markdown("### 1. Perfil del Lote")
+    c_lote, c_cultivo, c_dias, c_riego = st.columns(4)
+    with c_lote:
+        nombre_lote = st.text_input("Nombre del Lote:", placeholder="Ej: Lote del Río", help="Asignar un nombre le permitirá llevar un registro histórico de sus tratamientos futuros.")
+    with c_cultivo:
+        cultivo_seleccionado = st.selectbox("Cultivo:", ["Cacao", "Banano", "Arroz", "Maíz", "Otro"])
         if cultivo_seleccionado == "Otro": cultivo_seleccionado = st.text_input("Especifique:")
-        dias_siembra = st.number_input("📅 Días desde la siembra", min_value=0, value=30)
-    with c2:
-        col_val, col_uni = st.columns([1.5, 1])
-        with col_val: area_terreno = st.number_input("📏 Tamaño", min_value=0.1, value=1.0)
-        with col_uni: unidad_area = st.selectbox("Unidad", ["Hectáreas", "m²"])
-        tipo_riego = st.selectbox("💧 Tipo de Riego", ["Secano", "Goteo", "Aspersión", "Gravedad", "Río"])
-    with c3:
-        archivo_terreno = st.file_uploader("🗺️ Adjuntar polígono (Opcional)", type=['geojson', 'kml', 'json'])
+    with c_dias:
+        dias_siembra = st.number_input("Días desde siembra:", min_value=0, value=30)
+    with c_riego:
+        tipo_riego = st.selectbox("Tipo de Riego:", ["Secano", "Goteo", "Aspersión", "Gravedad"])
+
+    # PASO 2: ESTACADO VIRTUAL (Trazado de Polígono)
+    st.markdown("### 2. Delimitación del Terreno")
+    st.write("Utilice la herramienta de polígono (**⬟**) en el mapa para marcar las esquinas de su lote. Al cerrar la figura, calcularemos el área automáticamente.")
+    
+    m_diag = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=16, max_zoom=20)
+    folium.TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base').add_to(m_diag)
+    
+    # Inyectamos la herramienta de dibujo (Solo permitimos Polígonos)
+    Draw(export=False, position='topleft', draw_options={'polyline':False, 'rectangle':False, 'circle':False, 'circlemarker':False, 'marker':False, 'polygon':True}).add_to(m_diag)
+    
+    out_diag = st_folium(m_diag, width=1000, height=450, key="mapa_diagnostico")
+    
+    area_calculada = 0.0
+    if out_diag and out_diag.get('all_drawings'):
+        drawings = out_diag['all_drawings']
+        if len(drawings) > 0:
+            # Extraemos las coordenadas del último polígono dibujado
+            coords = drawings[0]['geometry']['coordinates'][0]
+            area_calculada = calcular_area_hectareas(coords)
+            st.success(f"✅ Área calculada por satélite: **{area_calculada:.2f} Hectáreas**")
+    
+    if area_calculada == 0.0:
+        st.info("ℹ️ Dibuje el perímetro de su parcela en el mapa para poder calcular la dosis exacta de sus tratamientos.")
 
     st.markdown("---")
-    
-    c4, c5 = st.columns(2)
-    with c4:
-        parte_afectada = st.selectbox("🍂 Parte afectada", ["Hojas", "Tallo o Tronco", "Fruto o Espiga", "Raíz", "Toda la planta"])
-        dias_sintomas = st.slider("⏱️ Días con síntomas", 1, 30, 5)
-        sintomas_texto = st.text_area("✍️ Describa el problema detalladamente:")
-    with c5:
-        foto_planta = st.file_uploader("📸 Subir foto clara del problema", type=['jpg', 'jpeg', 'png'])
+
+    # PASO 3: SÍNTOMAS Y FOTOS
+    st.markdown("### 3. Reporte Fitosanitario")
+    c_sint1, c_sint2 = st.columns(2)
+    with c_sint1:
+        parte_afectada = st.selectbox("Órgano afectado:", ["Hojas", "Tallo o Tronco", "Fruto o Espiga", "Raíz", "Toda la planta"])
+        dias_sintomas = st.slider("Días con síntomas:", 1, 30, 5)
+        sintomas_texto = st.text_area("Describa el problema detalladamente:")
+    with c_sint2:
+        foto_planta = st.file_uploader("Subir evidencia fotográfica:", type=['jpg', 'jpeg', 'png'])
         if foto_planta is not None: st.image(foto_planta, use_container_width=True)
 
-    if st.button("🧠 Analizar Cultivo con IA", use_container_width=True):
+    # PASO 4: ANÁLISIS IA
+    if st.button("🧠 Ejecutar Diagnóstico Inteligente", use_container_width=True):
         if not gemini_activo:
             st.error("⚠️ La API de Gemini no está configurada.")
-        elif len(sintomas_texto) < 10 and not foto_planta:
+        elif area_calculada == 0.0:
+            st.warning("⚠️ Por favor, dibuje el perímetro de su lote en el mapa satelital arriba para poder calcular la dosis de los insumos.")
+        elif len(sintomas_texto) < 5 and not foto_planta:
             st.warning("⚠️ Describa el problema o suba una foto.")
         else:
-            with st.spinner("🧠 El Sistema Experto está analizando..."):
+            with st.spinner("🧠 Procesando variables climáticas, espaciales y patológicas..."):
                 try:
                     model = genai.GenerativeModel('gemini-1.5-flash')
+                    nombre_terreno = nombre_lote if nombre_lote else "Lote sin nombre"
+                    
                     prompt_experto = f"""
                     Eres un sistema experto en agronomía tropical y fitopatología.
-                    CONTEXTO ACTUAL DEL LOTE:
-                    - Cultivo: {cultivo_seleccionado}
-                    - Edad del cultivo: {dias_siembra} días desde la siembra.
-                    - Área: {area_terreno} {unidad_area}
-                    - Altitud: {elevacion_actual} m.s.n.m.
+                    
+                    CONTEXTO ESPACIAL Y CLIMÁTICO DEL LOTE:
+                    - Nombre del Lote: {nombre_terreno}
+                    - Área exacta calculada satelitalmente: {area_calculada:.2f} Hectáreas.
+                    - Cultivo: {cultivo_seleccionado} ({dias_siembra} días desde la siembra).
                     - Riego: {tipo_riego}
                     - Clima reciente: {clima_texto}
-                    SÍNTOMAS REPORTADOS POR EL AGRICULTOR:
-                    - Órgano afectado: {parte_afectada}
-                    - Días con síntomas: {dias_sintomas} días
+                    
+                    SÍNTOMAS REPORTADOS:
+                    - Órgano afectado: {parte_afectada} ({dias_sintomas} días con síntomas).
                     - Descripción: {sintomas_texto}
                     
-                    INSTRUCCIONES DE RAZONAMIENTO (Chain-of-Thought):
-                    Redacta un breve "Análisis Técnico" relacionando edad, clima y síntomas.
+                    INSTRUCCIONES CRÍTICAS (Chain-of-Thought):
                     Debes responder SIEMPRE en este formato exacto Markdown:
                     **🔬 ANÁLISIS TÉCNICO:**
-                    [Razonamiento]
+                    [Razonamiento conectando clima, edad y síntomas]
+                    
                     **🚨 DIAGNÓSTICO PRELIMINAR:**
                     [2-3 causas probables]
-                    **📋 RECOMENDACIONES DE MANEJO:**
-                    1. **Inmediatas (0-24h):** [Acciones]
-                    2. **Corto plazo (1-7 días):** [Acciones]
-                    3. **Preventivas:** [Acciones]
+                    
+                    **📋 RECOMENDACIONES DE MANEJO Y DOSIFICACIÓN:**
+                    1. **Tratamiento Inmediato:** [Acciones]
+                    2. **Receta Agronómica (CRÍTICO):** Si recomiendas la aplicación de un producto agroquímico u orgánico, DEBES CALCULAR LA DOSIS TOTAL EXACTA para el área de {area_calculada:.2f} Hectáreas de este lote. (Ejemplo: Si la dosis es 2L/ha, indica "Aplique 4.68 L en total").
+                    3. **Manejo Preventivo:** [Acciones agronómicas]
+                    
                     **⚠️ NIVEL DE URGENCIA:** [Bajo / Medio / Alto / Crítico]
                     """
                     paquete_analisis = [prompt_experto]
@@ -465,8 +499,8 @@ elif opcion_menu == "Diagnóstico IA":
                         paquete_analisis.append(imagen_pil)
                         
                     respuesta = model.generate_content(paquete_analisis)
-                    st.success("✅ Diagnóstico Completado")
+                    st.success(f"✅ Diagnóstico Completado para: **{nombre_terreno}**")
                     st.markdown("---")
                     st.write(respuesta.text)
                 except Exception as e:
-                    st.error(f"❌ Error de IA: {e}")
+                    st.error(f"❌ Error al procesar el modelo de IA: {e}")
