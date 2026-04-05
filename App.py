@@ -5,6 +5,7 @@ from streamlit_folium import st_folium
 import requests
 from streamlit_geolocation import streamlit_geolocation
 import plotly.express as px
+import plotly.graph_objects as go
 import ee
 from datetime import datetime, timedelta
 import google.generativeai as genai
@@ -15,7 +16,6 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # --- 1. CONFIGURACIÓN Y ESTADO DE MEMORIA ---
-# Fondo Negro y Consistencia Universal (Modificación de Estilo)
 st.set_page_config(page_title="AgroIA", page_icon="🌿", layout="wide")
 
 if "lat" not in st.session_state: st.session_state.lat = -2.1962
@@ -62,7 +62,7 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Contenedor del Menú (Adaptado a fondo negro) */
+    /* Contenedor del Menú */
     div[role="radiogroup"] {
         display: flex;
         flex-direction: row;
@@ -74,12 +74,12 @@ st.markdown("""
         padding-bottom: 0px;
     }
     
-    /* Estilo de los botones (Pestañas inactivas - Paleta Oscura) */
+    /* Estilo de los botones (Letras Blancas en lugar de grises pálidas) */
     div[role="radiogroup"] > label {
         background-color: transparent !important;
         border: none !important;
         padding: 10px 20px !important;
-        color: #aaaaaa !important; /* Texto gris claro */
+        color: #ffffff !important; /* BLANCO PURO PARA ALTO CONTRASTE */
         font-weight: 600 !important;
         font-size: 16px !important;
         cursor: pointer;
@@ -93,21 +93,18 @@ st.markdown("""
         display: none; 
     }
     
-    /* Hover en pestañas inactivas sobre fondo negro */
     div[role="radiogroup"] > label:hover {
-        color: #4DB6AC !important; /* Turquesa más claro para contraste */
-        background-color: #1a1a1a !important; /* Gris muy oscuro */
+        color: #4DB6AC !important; 
+        background-color: #1a1a1a !important; 
     }
     
-    /* ESTILO DE LA PESTAÑA ACTIVA */
     div[role="radiogroup"] > label:has(input:checked) {
-        background-color: #00796B !important; /* Turquesa Oscuro */
+        background-color: #004D40 !important; 
         color: #ffffff !important;           
-        border-bottom: 4px solid #00E676 !important; /* Barra Inferior Verde Brillante */
+        border-bottom: 4px solid #00E676 !important; 
         font-weight: 700 !important;
     }
     
-    /* Tarjetas de métricas oscuras */
     .stMetric { 
         background: #121212; 
         border-radius: 8px; 
@@ -124,24 +121,24 @@ st.markdown("""
         color: #aaaaaa !important;
     }
     
-    /* Estilo para las descripciones cortas debajo de las métricas */
+    /* Descripciones ejecutivas debajo de los gráficos y métricas */
     .metric-caption {
-        font-size: 0.85rem;
-        color: #aaaaaa;
-        margin-top: -10px;
-        padding-left: 15px;
+        font-size: 0.90rem;
+        color: #bbbbbb;
+        margin-top: 5px;
+        line-height: 1.4;
     }
     
-    /* Títulos generales */
     h1, h2, h3, h4, .stMarkdown {
         color: #ffffff;
     }
     
-    /* Estilo para los botones grandes de mapeo */
-    .stButton > button {
+    /* Eliminación de barra blanca en el iFrame del GPS */
+    iframe[title="streamlit_geolocation.streamlit_geolocation"] {
+        background-color: transparent !important;
+        color-scheme: dark;
         border-radius: 5px;
     }
-    
 </style>
 """, unsafe_allow_html=True)
 
@@ -161,7 +158,8 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 # --- FUNCIONES AUXILIARES Y APIs ---
 def grados_a_direccion(grados):
-    arr = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"]
+    # Diccionario completo de la Rosa de los Vientos en español claro
+    arr = ["Norte", "Norte-Noreste", "Noreste", "Este-Noreste", "Este", "Este-Sureste", "Sureste", "Sur-Sureste", "Sur", "Sur-Suroeste", "Suroeste", "Oeste-Suroeste", "Oeste", "Oeste-Noroeste", "Noroeste", "Norte-Noroeste"]
     return arr[int((grados/22.5)+.5) % 16]
 
 def obtener_elevacion(lat, lon):
@@ -174,7 +172,6 @@ def obtener_datos_clima(lat, lon):
     try: return requests.get(url).json()
     except: return None
 
-# 1. API COPERNICUS CON CAPTURA DE TIEMPO
 def obtener_datos_suelo_copernicus(lat, lon):
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=soil_temperature_0_to_7cm,soil_temperature_7_to_28cm,soil_temperature_28_to_100cm,soil_temperature_100_to_255cm,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm,soil_moisture_28_to_100cm,soil_moisture_100_to_255cm&models=ecmwf_ifs&timezone=America/Guayaquil"
     try: 
@@ -201,7 +198,6 @@ def obtener_datos_suelo_copernicus(lat, lon):
         return None
     except: return None
 
-# 2. API NASA POWER
 def obtener_datos_nasa_power(lat, lon, start_date, end_date):
     url = f"https://power.larc.nasa.gov/api/temporal/daily/point?parameters=ALLSKY_SFC_SW_DWN,PRECTOTCORR&community=AG&longitude={lon}&latitude={lat}&start={start_date}&end={end_date}&format=JSON"
     try:
@@ -217,7 +213,6 @@ def obtener_datos_nasa_power(lat, lon, start_date, end_date):
     except:
         return None
 
-# 3. ALGORITMO INTEGRADO
 def evaluar_potencial_crecimiento(lat, lon):
     end_date = (datetime.today() - timedelta(days=7)).strftime('%Y%m%d')
     start_date = (datetime.today() - timedelta(days=14)).strftime('%Y%m%d')
@@ -256,14 +251,11 @@ def evaluar_potencial_crecimiento(lat, lon):
         "lluvia": round(lluvia_acumulada, 2)
     }
 
-# NUEVA FUNCIÓN: CÁLCULO DE ÁREA DE POLÍGONO EN HECTÁREAS (GEOMETRÍA ESFÉRICA)
 def calcular_area_hectareas(coordenadas):
-    """Calcula el área de un polígono en la superficie terrestre usando trigonometría esférica."""
     if not coordenadas or len(coordenadas) < 3:
         return 0.0
-    radio_tierra = 6378137.0 # metros
+    radio_tierra = 6378137.0 
     area = 0.0
-    # Asegurar que el polígono esté cerrado para el cálculo
     temp_coords = coordenadas[:]
     if temp_coords[0] != temp_coords[-1]:
         temp_coords.append(temp_coords[0])
@@ -273,7 +265,7 @@ def calcular_area_hectareas(coordenadas):
         lon2, lat2 = math.radians(temp_coords[i+1][0]), math.radians(temp_coords[i+1][1])
         area += (lon2 - lon1) * (2.0 + math.sin(lat1) + math.sin(lat2))
     area = abs(area * radio_tierra * radio_tierra / 2.0)
-    return area / 10000.0 # Conversión de m² a Hectáreas
+    return area / 10000.0 
 
 # --- 3. DESARROLLO DE LAS PÁGINAS ---
 
@@ -285,6 +277,7 @@ if opcion_menu == "Mapa":
     with c_lon: nuevo_lon = st.number_input("Longitud", value=st.session_state.lon, format="%.4f")
     with c_gps:
         st.write("O GPS actual:")
+        # Eliminado el "key" que causaba el TypeError
         ubicacion_gps = streamlit_geolocation()
         if ubicacion_gps['latitude'] is not None:
             nuevo_lat, nuevo_lon = round(ubicacion_gps['latitude'], 4), round(ubicacion_gps['longitude'], 4)
@@ -295,10 +288,11 @@ if opcion_menu == "Mapa":
 
     st.write("Haga **clic** sobre su parcela en el mapa para afinar la ubicación.")
     m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=14)
-    # Azulejo oscuro para mapa base (contraste con el fondo negro)
     folium.TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base').add_to(m)
     folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="green", icon="leaf")).add_to(m)
-    output = st_folium(m, width=1000, height=450, key="mapa_principal", returned_objects=["last_clicked"])
+    
+    # Se reemplaza use_container_width por width="100%" en el mapa para evitar barras blancas
+    output = st_folium(m, width="100%", height=450, key="mapa_principal", returned_objects=["last_clicked"])
 
     if output and output.get('last_clicked'):
         click_lat, click_lon = round(output['last_clicked']['lat'], 4), round(output['last_clicked']['lng'], 4)
@@ -311,7 +305,10 @@ elif opcion_menu == "Meteorología":
     json_clima = obtener_datos_clima(st.session_state.lat, st.session_state.lon)
     if json_clima and 'hourly' in json_clima:
         cur = json_clima['current_weather']
-        st.markdown(f"**Condiciones en superficie:** Viento {grados_a_direccion(cur['winddirection'])} a {cur['windspeed']} km/h")
+        
+        # Rosa de los vientos en Español claro
+        st.markdown(f"**Condiciones en superficie:** Viento hacia el **{grados_a_direccion(cur['winddirection'])}** a {cur['windspeed']} km/h")
+        
         c1, c2, c3, c4 = st.columns(4)
         with c1: st.metric("🌡️ Temperatura", f"{cur['temperature']}°C")
         with c2: st.metric("💧 Humedad Relativa", f"{json_clima['hourly']['relativehumidity_2m'][0]}%")
@@ -323,9 +320,44 @@ elif opcion_menu == "Meteorología":
             'Prob_Lluvia (%)': json_clima['hourly']['precipitation_probability'],
             'Evapotranspiración (mm)': json_clima['hourly']['et0_fao_evapotranspiration']
         })
-        # Gráficos adaptados a fondo oscuro (Plotly template "plotly_dark")
-        st.plotly_chart(px.line(df_hourly, x='Fecha_Hora', y='Evapotranspiración (mm)', title="Demanda Hídrica y Estrés Atmosférico (Evapotranspiración FAO)", template="plotly_dark", color_discrete_sequence=['#FF7043']), use_container_width=True)
-        st.plotly_chart(px.bar(df_hourly, x='Fecha_Hora', y='Prob_Lluvia (%)', title="Certidumbre y Probabilidad de Precipitación (%)", template="plotly_dark", color_discrete_sequence=['#42A5F5']), use_container_width=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # GRÁFICO 1: ESTRÉS ATMOSFÉRICO (ÁREA CON RELLENO TIPO UNSPLASH)
+        fig_et0 = go.Figure()
+        fig_et0.add_trace(go.Scatter(
+            x=df_hourly['Fecha_Hora'], 
+            y=df_hourly['Evapotranspiración (mm)'],
+            fill='tozeroy',
+            mode='lines',
+            line=dict(color='#FF5722', width=3), # Línea superior definida roja/naranja
+            fillcolor='rgba(255, 87, 34, 0.3)', # Gradiente/Relleno suave
+            name='ET0'
+        ))
+        fig_et0.update_layout(
+            title="Demanda Hídrica y Estrés Atmosférico (Evapotranspiración FAO)",
+            template="plotly_dark",
+            xaxis_title="", 
+            yaxis_title="Evapotranspiración (mm)",
+            margin=dict(l=0, r=0, t=40, b=0)
+        )
+        # config locale='es' traduce el panel flotante de Plotly al español
+        st.plotly_chart(fig_et0, width="stretch", config={'displaylogo': False, 'locale': 'es'})
+        st.markdown("<div class='metric-caption'>Este gráfico de área ilustra la cantidad de agua que pierde su cultivo por hora. <b>Picos altos indican un estrés hídrico severo</b> inducido por el ambiente, alertando la necesidad de riego.</div><br>", unsafe_allow_html=True)
+
+        # GRÁFICO 2: PROBABILIDAD DE LLUVIA (BARRAS CON GRADIENTE DINÁMICO)
+        fig_precip = px.bar(
+            df_hourly, 
+            x='Fecha_Hora', 
+            y='Prob_Lluvia (%)',
+            color='Prob_Lluvia (%)',
+            color_continuous_scale=['#E1F5FE', '#0D47A1'], # De celeste muy claro a Azul marino intenso
+            title="Certidumbre y Probabilidad de Precipitación (%)",
+            template="plotly_dark"
+        )
+        fig_precip.update_layout(xaxis_title="", margin=dict(l=0, r=0, t=40, b=0))
+        st.plotly_chart(fig_precip, width="stretch", config={'displaylogo': False, 'locale': 'es'})
+        st.markdown("<div class='metric-caption'>Las barras muestran la certeza de que llueva. <b>Colores más oscuros y barras más altas indican una probabilidad casi absoluta</b>. Herramienta vital para evitar que la lluvia lave sus agroquímicos recién aplicados.</div>", unsafe_allow_html=True)
 
 elif opcion_menu == "Suelo":
     st.subheader(f"🌍 Perfil Físico del Suelo (ERA5-Land: Copernicus)")
@@ -343,29 +375,27 @@ elif opcion_menu == "Suelo":
         st.markdown("### 💧 Humedad Volumétrica del Suelo (m³/m³)")
         ch1, ch2, ch3, ch4 = st.columns(4)
         
-        # Extracción totalmente blindada
         m_0_7 = datos_suelo.get('soil_moisture_0_to_7cm')
         m_7_28 = datos_suelo.get('soil_moisture_7_to_28cm')
         m_28_100 = datos_suelo.get('soil_moisture_28_to_100cm')
         m_100_255 = datos_suelo.get('soil_moisture_100_to_255cm')
         
-        ch1.metric("0 - 7 cm (Siembra)", f"{m_0_7} m³" if m_0_7 is not None else "N/D")
-        ch2.metric("7 - 28 cm (Raíz Corta)", f"{m_7_28} m³" if m_7_28 is not None else "N/D")
-        ch3.metric("28 - 100 cm (Raíz Profunda)", f"{m_28_100} m³" if m_28_100 is not None else "N/D")
-        ch4.metric("100 - 289 cm (Acuífero)", f"{m_100_255} m³" if m_100_255 is not None else "N/D")
+        ch1.metric("0 - 7 cm", f"{m_0_7} m³" if m_0_7 is not None else "N/D")
+        ch2.metric("7 - 28 cm", f"{m_7_28} m³" if m_7_28 is not None else "N/D")
+        ch3.metric("28 - 100 cm", f"{m_28_100} m³" if m_28_100 is not None else "N/D")
+        ch4.metric("100 - 289 cm", f"{m_100_255} m³" if m_100_255 is not None else "N/D")
         
         st.markdown("---")
         st.markdown("### 🌡️ Temperatura del Perfil del Suelo (°C)")
         ct1, ct2, ct3, ct4 = st.columns(4)
         
-        # ERROR CORREGIDO AQUI: usamos datos_suelo en todas las líneas y blindaje N/D
         t_0_7 = datos_suelo.get('soil_temperature_0_to_7cm')
         t_7_28 = datos_suelo.get('soil_temperature_7_to_28cm')
         t_28_100 = datos_suelo.get('soil_temperature_28_to_100cm')
         t_100_255 = datos_suelo.get('soil_temperature_100_to_255cm')
         
-        ct1.metric("0 - 7 cm (Superficie)", f"{t_0_7} °C" if t_0_7 is not None else "N/D")
-        ct2.metric("7 - 28 cm (Zona Fúngica)", f"{t_7_28} °C" if t_7_28 is not None else "N/D")
+        ct1.metric("0 - 7 cm", f"{t_0_7} °C" if t_0_7 is not None else "N/D")
+        ct2.metric("7 - 28 cm", f"{t_7_28} °C" if t_7_28 is not None else "N/D")
         ct3.metric("28 - 100 cm", f"{t_28_100} °C" if t_28_100 is not None else "N/D")
         ct4.metric("100 - 289 cm", f"{t_100_255} °C" if t_100_255 is not None else "N/D")
     else:
@@ -388,11 +418,11 @@ elif opcion_menu == "Estado de la Planta":
             st.metric("☀️ Energía PAR (NASA)", f"{resultado_sinergia['radiacion']} MJ/m²/día")
             st.markdown('<div class="metric-caption">Promedio de Radiación Solar (últimos 7 días)</div>', unsafe_allow_html=True)
         with c2:
-            st.metric("💧 Reserva Profunda (Copernicus)", f"{resultado_sinergia['humedad']} m³/m³")
-            st.markdown('<div class="metric-caption">Humedad en zona radicular profunda (28-100 cm)</div>', unsafe_allow_html=True)
+            st.metric("💧 Reserva Profunda", f"{resultado_sinergia['humedad']} m³/m³")
+            st.markdown('<div class="metric-caption">Humedad en zona radicular profunda (28-100 cm) extraída de Copernicus</div>', unsafe_allow_html=True)
         with c3:
-            st.metric("🌧️ Lluvia Acumulada (NASA)", f"{resultado_sinergia['lluvia']} mm")
-            st.markdown('<div class="metric-caption">Precipitación total acumulada (últimos 7 días)</div>', unsafe_allow_html=True)
+            st.metric("🌧️ Lluvia Acumulada", f"{resultado_sinergia['lluvia']} mm")
+            st.markdown('<div class="metric-caption">Precipitación total acumulada en la última semana procesada por la NASA</div>', unsafe_allow_html=True)
     else:
         st.error("❌ Error de comunicación con los servidores espaciales. Verifique las coordenadas.")
 
@@ -428,11 +458,10 @@ elif opcion_menu == "Satélite":
                     folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base').add_to(m_ndvi)
                     folium.TileLayer(tiles=map_id_dict['tile_fetcher'].url_format, attr='Google Earth Engine', name='NDVI', overlay=True, opacity=0.7, max_zoom=20, max_native_zoom=16).add_to(m_ndvi)
                     folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="red")).add_to(m_ndvi)
-                    st_folium(m_ndvi, width=1000, height=450, key="mapa_ndvi")
+                    st_folium(m_ndvi, width="100%", height=450, key="mapa_ndvi")
             except Exception as e:
                 st.error(f"❌ Error satelital: {e}")
 
-# NUEVA SECCIÓN DE DIAGNÓSTICO IA (IMPLEMENTACIÓN DE "ESTACADO DIGITAL")
 elif opcion_menu == "Diagnóstico IA":
     st.subheader("🤖 Diagnóstico Fitosanitario y Dosificación (IA)")
     st.warning("**⚠️ Aviso Legal:** Los resultados son probabilísticos. Verifique con un agrónomo.")
@@ -443,34 +472,30 @@ elif opcion_menu == "Diagnóstico IA":
     with c_desc_gps:
         st.write("Presione el botón para capturar las coordenadas exactas donde se encuentra parado en este momento. Esto centrará el mapa.")
     with c_btn_gps:
-        # El botón nativo de geolocalización que sí funciona en móviles
-        ubicacion_gps = streamlit_geolocation(key="diag_gps_btn")
+        # Se retiró el kwarg 'key' para evitar el TypeError en streamlit_geolocation
+        ubicacion_gps = streamlit_geolocation()
         if ubicacion_gps['latitude'] is not None:
-            # Actualizamos sesión y forzamos recarga del mapa centrado
             st.session_state.lat = round(ubicacion_gps['latitude'], 4)
             st.session_state.lon = round(ubicacion_gps['longitude'], 4)
-            st.session_state.last_marker = [st.session_state.lat, st.session_state.lon]
 
     # 2. DELIMITACIÓN INTERACTIVA (EL "ESTACADO VIRTUAL")
     st.markdown("### 2. Delimite su Terreno")
     st.write("Use los botones a continuación para construir el perímetro de su lote punto por punto.")
     
+    # Hemos eliminado el use_container_width de los botones para evitar advertencias de depreciación futuras
     c_btn_marcar, c_btn_deshacer, c_btn_cerrar = st.columns(3)
     
-    # Lógica de estados de mapeo (Puntos + Polígono)
     puntos_mapeo = st.session_state.temp_coords
     poligono_cerrado = False
     
     with c_btn_marcar:
-        if st.button("📍 Marcar Esquina actual (GPS)", key="btn_marcar_punto", use_container_width=True):
-            # Guardamos la coordenada centradora actual
-            puntos_mapeo.append([st.session_state.lon, st.session_state.lat]) # Folium usa [lon, lat] internamente
+        if st.button("📍 Marcar Esquina actual (GPS)"):
+            puntos_mapeo.append([st.session_state.lon, st.session_state.lat])
             st.session_state.temp_coords = puntos_mapeo
-            # Forzamos recarga de la app para ver el punto en el mapa
             st.rerun()
 
     with c_btn_deshacer:
-        if st.button("↩️ Corregir Último Punto", key="btn_deshacer_punto", use_container_width=True):
+        if st.button("↩️ Corregir Último Punto"):
             if puntos_mapeo:
                 puntos_mapeo.pop()
                 st.session_state.temp_coords = puntos_mapeo
@@ -478,40 +503,31 @@ elif opcion_menu == "Diagnóstico IA":
 
     with c_btn_cerrar:
         if len(puntos_mapeo) >= 3:
-            if st.button("✅ Cerrar Terreno y Calcular Área", key="btn_cerrar_poligono", use_container_width=True):
-                # Unimos el último punto con el primero para cerrar la figura
+            if st.button("✅ Cerrar Terreno y Calcular Área"):
                 puntos_mapeo.append(puntos_mapeo[0])
                 st.session_state.temp_coords = puntos_mapeo
                 st.rerun()
     
     # 3. EL MAPA DE CONSTRUCCIÓN
-    # El mapa base es oscuro para mantener el diseño
     m_diag = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=16, max_zoom=20)
     folium.TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base').add_to(m_diag)
     
-    # Dibujamos las "estacas" y la "línea elástica" si hay puntos
     if puntos_mapeo:
-        # Dibujamos vértices (estacas numeradas)
         for i, punto in enumerate(puntos_mapeo):
-            # Folium [lat, lon]
             folium.Marker([punto[1], punto[0]], icon=folium.DivIcon(html=f'<div style="font-size: 14pt; color: white; background-color: blue; border-radius: 50%; width: 25px; height: 25px; text-align: center; font-weight: bold; border: 2px solid white;">{i+1}</div>')).add_to(m_diag)
         
-        # Dibujamos la línea que los une (polilínea)
-        coordenadas_linea = [[p[1], p[0]] for p in puntos_mapeo] # Folium usa [lat, lon]
+        coordenadas_linea = [[p[1], p[0]] for p in puntos_mapeo]
         if len(puntos_mapeo) > 1:
-            if puntos_mapeo[0] == puntos_mapeo[-1]: # Si está cerrado
+            if puntos_mapeo[0] == puntos_mapeo[-1]:
                 folium.Polygon(locations=coordenadas_linea, color="#00E676", weight=3, fill=True, fill_color="#00E676", fill_opacity=0.3).add_to(m_diag)
                 poligono_cerrado = True
-            else: # Si está abierto
+            else:
                 folium.PolyLine(locations=coordenadas_linea, color="#2196F3", weight=3, dash_array='5, 5').add_to(m_diag)
     
-    # Usamos returned_objects vacío para que no recargue constantemente, solo cuando los botones de Streamlit lo forcén
-    st_folium(m_diag, width=1000, height=450, key="mapa_diagnostico_puntos", returned_objects=[])
+    st_folium(m_diag, width="100%", height=450, key="mapa_diagnostico_puntos", returned_objects=[])
     
-    # Cálculo de área si está cerrado
     area_calculada = 0.0
     if poligono_cerrado:
-        # Usamos coordenadas [lon, lat] para la función matemática
         area_calculada = calcular_area_hectareas(puntos_mapeo[:-1])
         st.success(f"✅ Terreno delimitado con éxito. Superficie detectada por satélite: **{area_calculada:.2f} Hectáreas**")
 
@@ -528,9 +544,9 @@ elif opcion_menu == "Diagnóstico IA":
     
     c_sint1, c_sint2 = st.columns(2)
     with c_sint1:
-        # Sugerimos nombrar el lote para el registro histórico
-        nombre_lote_form = st.text_input("Asigne un nombre a este Lote:", value=st.session_state.nombre_lote_global, placeholder="Ej: Lote de la Loma", help="Nombrar su lote le permitirá guardar este diagnóstico en su historial y analizar cómo afectaron los tratamientos previos en futuras consultas.")
+        nombre_lote_form = st.text_input("Asigne un nombre a este Lote:", value=st.session_state.nombre_lote_global, placeholder="Ej: Lote de la Loma")
         if nombre_lote_form: st.session_state.nombre_lote_global = nombre_lote_form
+        st.markdown("<div class='metric-caption' style='margin-bottom:15px;'>Nombrar su lote le permitirá guardar este diagnóstico en su historial.</div>", unsafe_allow_html=True)
             
         parte_afectada = st.selectbox("🍂 Parte afectada:", ["Hojas", "Tallo o Tronco", "Fruto o Espiga", "Raíz", "Toda la planta"])
         dias_sintomas = st.slider("⏱️ Días con síntomas:", 1, 30, 5)
@@ -539,7 +555,7 @@ elif opcion_menu == "Diagnóstico IA":
         foto_planta = st.file_uploader("📸 Subir foto clara del problema:", type=['jpg', 'jpeg', 'png'])
         if foto_planta is not None: st.image(foto_planta, use_container_width=True)
 
-    if st.button("🧠 Analizar Cultivo con IA", use_container_width=True):
+    if st.button("🧠 Analizar Cultivo con IA"):
         if not gemini_activo:
             st.error("⚠️ La API de Gemini no está configurada.")
         elif not poligono_cerrado:
@@ -552,7 +568,6 @@ elif opcion_menu == "Diagnóstico IA":
                     model = genai.GenerativeModel('gemini-1.5-flash')
                     nombre_terreno = st.session_state.nombre_lote_global if st.session_state.nombre_lote_global else "Lote sin nombre"
                     
-                    # PROMPT ACTUALIZADO: Forzamos a Gemini a usar el área calculada y calcular dosis totales
                     prompt_experto = f"""
                     Eres un sistema experto en agronomía tropical y fitopatología.
                     
