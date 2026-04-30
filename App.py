@@ -53,92 +53,43 @@ except Exception as e:
 # --- 2. DISEÑO UI/UX CORPORATIVO (PALETA OSCURA/MENÚ MEJORADO) ---
 st.markdown("""
 <style>
-    /* Fondo Negro Obligatorio en toda la página */
-    .stApp {
-        background-color: #000000;
-        color: #ffffff;
-    }
-    
+    .stApp { background-color: #000000; color: #ffffff; }
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Contenedor del Menú */
     div[role="radiogroup"] {
-        display: flex;
-        flex-direction: row;
-        gap: 15px;
-        background-color: transparent;
-        justify-content: flex-start;
-        align-items: center;
-        border-bottom: 2px solid #333333;
-        padding-bottom: 0px;
+        display: flex; flex-direction: row; gap: 15px; background-color: transparent;
+        justify-content: flex-start; align-items: center; border-bottom: 2px solid #333333; padding-bottom: 0px;
     }
-    
-    /* Estilo de los botones (Letras Blancas en lugar de grises pálidas) */
     div[role="radiogroup"] > label {
-        background-color: transparent !important;
-        border: none !important;
-        padding: 10px 20px !important;
-        color: #ffffff !important; /* BLANCO PURO PARA ALTO CONTRASTE */
-        font-weight: 600 !important;
-        font-size: 16px !important;
-        cursor: pointer;
-        border-radius: 5px 5px 0px 0px !important;
-        border-bottom: 4px solid transparent !important;
-        transition: all 0.3s ease;
-        margin-bottom: -2px;
+        background-color: transparent !important; border: none !important; padding: 10px 20px !important;
+        color: #ffffff !important; font-weight: 600 !important; font-size: 16px !important;
+        cursor: pointer; border-radius: 5px 5px 0px 0px !important; border-bottom: 4px solid transparent !important;
+        transition: all 0.3s ease; margin-bottom: -2px;
     }
-    
-    div[role="radiogroup"] > label > div:first-child {
-        display: none; 
-    }
-    
-    div[role="radiogroup"] > label:hover {
-        color: #4DB6AC !important; 
-        background-color: #1a1a1a !important; 
-    }
-    
+    div[role="radiogroup"] > label > div:first-child { display: none; }
+    div[role="radiogroup"] > label:hover { color: #4DB6AC !important; background-color: #1a1a1a !important; }
     div[role="radiogroup"] > label:has(input:checked) {
-        background-color: #004D40 !important; 
-        color: #ffffff !important;           
-        border-bottom: 4px solid #00E676 !important; 
-        font-weight: 700 !important;
+        background-color: #004D40 !important; color: #ffffff !important;           
+        border-bottom: 4px solid #00E676 !important; font-weight: 700 !important;
     }
     
     .stMetric { 
-        background: #121212; 
-        border-radius: 8px; 
-        padding: 15px; 
-        border-left: 5px solid #009688;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        color: #ffffff !important;
+        background: #121212; border-radius: 8px; padding: 15px; 
+        border-left: 5px solid #009688; box-shadow: 0 4px 6px rgba(0,0,0,0.3); color: #ffffff !important;
     }
+    div[data-testid="stMetricValue"] > div { color: #ffffff !important; }
+    div[data-testid="stMetricLabel"] > div { color: #aaaaaa !important; }
     
-    div[data-testid="stMetricValue"] > div {
-        color: #ffffff !important;
-    }
-    div[data-testid="stMetricLabel"] > div {
-        color: #aaaaaa !important;
-    }
+    .metric-caption { font-size: 0.90rem; color: #bbbbbb; margin-top: 5px; line-height: 1.4; }
+    h1, h2, h3, h4, .stMarkdown { color: #ffffff; }
     
-    /* Descripciones ejecutivas debajo de los gráficos y métricas */
-    .metric-caption {
-        font-size: 0.90rem;
-        color: #bbbbbb;
-        margin-top: 5px;
-        line-height: 1.4;
-    }
-    
-    h1, h2, h3, h4, .stMarkdown {
-        color: #ffffff;
-    }
-    
-    /* Eliminación de barra blanca en el iFrame del GPS */
     iframe[title="streamlit_geolocation.streamlit_geolocation"] {
-        background-color: transparent !important;
-        color-scheme: dark;
-        border-radius: 5px;
+        background-color: transparent !important; color-scheme: dark; border-radius: 5px;
     }
+    
+    /* Pequeño ajuste para los labels de los nuevos controles de tiempo */
+    .time-label { font-size: 14px; font-weight: 600; color: #ffffff; margin-bottom: 5px; display: block; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -158,7 +109,6 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 # --- FUNCIONES AUXILIARES Y APIs ---
 def grados_a_direccion(grados):
-    # Diccionario completo de la Rosa de los Vientos en español claro
     arr = ["Norte", "Norte-Noreste", "Noreste", "Este-Noreste", "Este", "Este-Sureste", "Sureste", "Sur-Sureste", "Sur", "Sur-Suroeste", "Suroeste", "Oeste-Suroeste", "Oeste", "Oeste-Noroeste", "Noroeste", "Norte-Noroeste"]
     return arr[int((grados/22.5)+.5) % 16]
 
@@ -277,21 +227,19 @@ if opcion_menu == "Mapa":
     with c_lon: nuevo_lon = st.number_input("Longitud", value=st.session_state.lon, format="%.4f")
     with c_gps:
         st.write("O GPS actual:")
-        # Eliminado el "key" que causaba el TypeError
         ubicacion_gps = streamlit_geolocation()
-        if ubicacion_gps['latitude'] is not None:
-            nuevo_lat, nuevo_lon = round(ubicacion_gps['latitude'], 4), round(ubicacion_gps['longitude'], 4)
-
-    if nuevo_lat != st.session_state.lat or nuevo_lon != st.session_state.lon:
-        st.session_state.lat, st.session_state.lon = nuevo_lat, nuevo_lon
-        st.rerun()
+        if ubicacion_gps['latitude'] is not None and ubicacion_gps['longitude'] is not None:
+            lat_ob = round(ubicacion_gps['latitude'], 4)
+            lon_ob = round(ubicacion_gps['longitude'], 4)
+            if lat_ob != st.session_state.lat or lon_ob != st.session_state.lon:
+                st.session_state.lat, st.session_state.lon = lat_ob, lon_ob
+                st.rerun()
 
     st.write("Haga **clic** sobre su parcela en el mapa para afinar la ubicación.")
     m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=14)
     folium.TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base').add_to(m)
     folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="green", icon="leaf")).add_to(m)
     
-    # Se reemplaza use_container_width por width="100%" en el mapa para evitar barras blancas
     output = st_folium(m, width="100%", height=450, key="mapa_principal", returned_objects=["last_clicked"])
 
     if output and output.get('last_clicked'):
@@ -306,7 +254,6 @@ elif opcion_menu == "Meteorología":
     if json_clima and 'hourly' in json_clima:
         cur = json_clima['current_weather']
         
-        # Rosa de los vientos en Español claro
         st.markdown(f"**Condiciones en superficie:** Viento hacia el **{grados_a_direccion(cur['winddirection'])}** a {cur['windspeed']} km/h")
         
         c1, c2, c3, c4 = st.columns(4)
@@ -323,37 +270,18 @@ elif opcion_menu == "Meteorología":
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # GRÁFICO 1: ESTRÉS ATMOSFÉRICO (ÁREA CON RELLENO TIPO UNSPLASH)
         fig_et0 = go.Figure()
         fig_et0.add_trace(go.Scatter(
-            x=df_hourly['Fecha_Hora'], 
-            y=df_hourly['Evapotranspiración (mm)'],
-            fill='tozeroy',
-            mode='lines',
-            line=dict(color='#FF5722', width=3), # Línea superior definida roja/naranja
-            fillcolor='rgba(255, 87, 34, 0.3)', # Gradiente/Relleno suave
-            name='ET0'
+            x=df_hourly['Fecha_Hora'], y=df_hourly['Evapotranspiración (mm)'], fill='tozeroy', mode='lines',
+            line=dict(color='#FF5722', width=3), fillcolor='rgba(255, 87, 34, 0.3)', name='ET0'
         ))
-        fig_et0.update_layout(
-            title="Demanda Hídrica y Estrés Atmosférico (Evapotranspiración FAO)",
-            template="plotly_dark",
-            xaxis_title="", 
-            yaxis_title="Evapotranspiración (mm)",
-            margin=dict(l=0, r=0, t=40, b=0)
-        )
-        # config locale='es' traduce el panel flotante de Plotly al español
+        fig_et0.update_layout(title="Demanda Hídrica y Estrés Atmosférico (Evapotranspiración FAO)", template="plotly_dark", xaxis_title="", yaxis_title="Evapotranspiración (mm)", margin=dict(l=0, r=0, t=40, b=0))
         st.plotly_chart(fig_et0, width="stretch", config={'displaylogo': False, 'locale': 'es'})
         st.markdown("<div class='metric-caption'>Este gráfico de área ilustra la cantidad de agua que pierde su cultivo por hora. <b>Picos altos indican un estrés hídrico severo</b> inducido por el ambiente, alertando la necesidad de riego.</div><br>", unsafe_allow_html=True)
 
-        # GRÁFICO 2: PROBABILIDAD DE LLUVIA (BARRAS CON GRADIENTE DINÁMICO)
         fig_precip = px.bar(
-            df_hourly, 
-            x='Fecha_Hora', 
-            y='Prob_Lluvia (%)',
-            color='Prob_Lluvia (%)',
-            color_continuous_scale=['#E1F5FE', '#0D47A1'], # De celeste muy claro a Azul marino intenso
-            title="Certidumbre y Probabilidad de Precipitación (%)",
-            template="plotly_dark"
+            df_hourly, x='Fecha_Hora', y='Prob_Lluvia (%)', color='Prob_Lluvia (%)',
+            color_continuous_scale=['#E1F5FE', '#0D47A1'], title="Certidumbre y Probabilidad de Precipitación (%)", template="plotly_dark"
         )
         fig_precip.update_layout(xaxis_title="", margin=dict(l=0, r=0, t=40, b=0))
         st.plotly_chart(fig_precip, width="stretch", config={'displaylogo': False, 'locale': 'es'})
@@ -463,28 +391,30 @@ elif opcion_menu == "Satélite":
                 st.error(f"❌ Error satelital: {e}")
 
 elif opcion_menu == "Diagnóstico IA":
-    st.subheader("🤖 Diagnóstico Fitosanitario y Dosificación (IA)")
-    st.warning("**⚠️ Aviso Legal:** Los resultados son probabilísticos. Verifique con un agrónomo.")
+    st.subheader("🤖 Diagnóstico Fitosanitario y Dosificación (Múltiples IA)")
+    st.warning("**⚠️ Aviso Legal:** Sistema operado por Comité Agéntico. Verifique con un agrónomo.")
     
     # 1. GPS Y MI UBICACIÓN
     st.markdown("### 1. Geolocalice su Lote")
     c_desc_gps, c_btn_gps = st.columns([4, 1])
     with c_desc_gps:
-        st.write("Presione el botón para capturar las coordenadas exactas donde se encuentra parado en este momento. Esto centrará el mapa.")
+        st.write("Presione el botón para capturar las coordenadas exactas donde se encuentra parado. Esto centrará el mapa.")
+        st.caption("*Nota: En celulares, requiere conexión HTTPS (publicada).*")
     with c_btn_gps:
-        # Se retiró el kwarg 'key' para evitar el TypeError en streamlit_geolocation
         ubicacion_gps = streamlit_geolocation()
-        if ubicacion_gps['latitude'] is not None:
-            st.session_state.lat = round(ubicacion_gps['latitude'], 4)
-            st.session_state.lon = round(ubicacion_gps['longitude'], 4)
+        if ubicacion_gps['latitude'] is not None and ubicacion_gps['longitude'] is not None:
+            lat_obtenida = round(ubicacion_gps['latitude'], 4)
+            lon_obtenida = round(ubicacion_gps['longitude'], 4)
+            if lat_obtenida != st.session_state.lat or lon_obtenida != st.session_state.lon:
+                st.session_state.lat = lat_obtenida
+                st.session_state.lon = lon_obtenida
+                st.rerun()
 
-    # 2. DELIMITACIÓN INTERACTIVA (EL "ESTACADO VIRTUAL")
+    # 2. DELIMITACIÓN INTERACTIVA
     st.markdown("### 2. Delimite su Terreno")
     st.write("Use los botones a continuación para construir el perímetro de su lote punto por punto.")
     
-    # Hemos eliminado el use_container_width de los botones para evitar advertencias de depreciación futuras
     c_btn_marcar, c_btn_deshacer, c_btn_cerrar = st.columns(3)
-    
     puntos_mapeo = st.session_state.temp_coords
     poligono_cerrado = False
     
@@ -493,14 +423,12 @@ elif opcion_menu == "Diagnóstico IA":
             puntos_mapeo.append([st.session_state.lon, st.session_state.lat])
             st.session_state.temp_coords = puntos_mapeo
             st.rerun()
-
     with c_btn_deshacer:
         if st.button("↩️ Corregir Último Punto"):
             if puntos_mapeo:
                 puntos_mapeo.pop()
                 st.session_state.temp_coords = puntos_mapeo
                 st.rerun()
-
     with c_btn_cerrar:
         if len(puntos_mapeo) >= 3:
             if st.button("✅ Cerrar Terreno y Calcular Área"):
@@ -508,14 +436,12 @@ elif opcion_menu == "Diagnóstico IA":
                 st.session_state.temp_coords = puntos_mapeo
                 st.rerun()
     
-    # 3. EL MAPA DE CONSTRUCCIÓN
     m_diag = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=16, max_zoom=20)
     folium.TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base').add_to(m_diag)
     
     if puntos_mapeo:
         for i, punto in enumerate(puntos_mapeo):
             folium.Marker([punto[1], punto[0]], icon=folium.DivIcon(html=f'<div style="font-size: 14pt; color: white; background-color: blue; border-radius: 50%; width: 25px; height: 25px; text-align: center; font-weight: bold; border: 2px solid white;">{i+1}</div>')).add_to(m_diag)
-        
         coordenadas_linea = [[p[1], p[0]] for p in puntos_mapeo]
         if len(puntos_mapeo) > 1:
             if puntos_mapeo[0] == puntos_mapeo[-1]:
@@ -533,7 +459,7 @@ elif opcion_menu == "Diagnóstico IA":
 
     st.markdown("---")
 
-    # 4. FORMULARIO DE DIAGNÓSTICO
+    # 4. FORMULARIO DE DIAGNÓSTICO (TIEMPOS EXACTOS MEJORADOS)
     st.markdown("### 3. Reporte Fitosanitario")
     
     elevacion_actual = obtener_elevacion(st.session_state.lat, st.session_state.lon)
@@ -548,14 +474,36 @@ elif opcion_menu == "Diagnóstico IA":
         if nombre_lote_form: st.session_state.nombre_lote_global = nombre_lote_form
         st.markdown("<div class='metric-caption' style='margin-bottom:15px;'>Nombrar su lote le permitirá guardar este diagnóstico en su historial.</div>", unsafe_allow_html=True)
             
-        parte_afectada = st.selectbox("🍂 Parte afectada:", ["Hojas", "Tallo o Tronco", "Fruto o Espiga", "Raíz", "Toda la planta"])
-        dias_sintomas = st.slider("⏱️ Días con síntomas:", 1, 30, 5)
-        sintomas_texto = st.text_area("✍️ Describa el problema detalladamente:")
+        cultivo_seleccionado = st.selectbox("🌱 Cultivo afectado:", ["Cacao", "Banano", "Arroz", "Maíz", "Otro"])
+        if cultivo_seleccionado == "Otro": cultivo_seleccionado = st.text_input("Especifique:")
+        
+        # --- NUEVO: Tiempo de existencia de la planta ---
+        st.markdown("<span class='time-label'>📅 Tiempo de existencia de la planta:</span>", unsafe_allow_html=True)
+        col_ed1, col_ed2 = st.columns(2)
+        with col_ed1:
+            edad_num = st.number_input("Cantidad", min_value=0, value=1, label_visibility="collapsed", key="edad_num")
+        with col_ed2:
+            edad_uni = st.selectbox("Unidad", ["Años", "Meses", "Semanas", "Días"], label_visibility="collapsed", key="edad_uni")
+        tiempo_planta_str = f"{edad_num} {edad_uni}"
+        
+        parte_afectada = st.selectbox("🍂 Órgano visiblemente afectado:", ["Hojas", "Tallo o Tronco", "Fruto o Espiga", "Raíz", "Toda la planta"])
+        
+        # --- NUEVO: Tiempo con síntomas ---
+        st.markdown("<span class='time-label'>⏱️ Tiempo con síntomas:</span>", unsafe_allow_html=True)
+        col_sin1, col_sin2 = st.columns(2)
+        with col_sin1:
+            sint_num = st.number_input("Cantidad", min_value=1, value=5, label_visibility="collapsed", key="sint_num")
+        with col_sin2:
+            sint_uni = st.selectbox("Unidad", ["Días", "Semanas", "Meses"], label_visibility="collapsed", key="sint_uni")
+        tiempo_sintomas_str = f"{sint_num} {sint_uni}"
+        
     with c_sint2:
+        tipo_riego = st.selectbox("💧 Tipo de Riego:", ["Secano", "Goteo", "Aspersión", "Gravedad", "Río"])
+        sintomas_texto = st.text_area("✍️ Describa el problema detalladamente:")
         foto_planta = st.file_uploader("📸 Subir foto clara del problema:", type=['jpg', 'jpeg', 'png'])
         if foto_planta is not None: st.image(foto_planta, use_container_width=True)
 
-    if st.button("🧠 Analizar Cultivo con IA"):
+    if st.button("🧠 Ejecutar Comité de IA (Diagnóstico Multi-Agente)"):
         if not gemini_activo:
             st.error("⚠️ La API de Gemini no está configurada.")
         elif not poligono_cerrado:
@@ -563,36 +511,39 @@ elif opcion_menu == "Diagnóstico IA":
         elif len(sintomas_texto) < 5 and not foto_planta:
             st.warning("⚠️ Describa el problema o suba una foto.")
         else:
-            with st.spinner("🧠 El Sistema Experto está analizando variables climáticas y patológicas..."):
+            with st.spinner("🧠 Inicializando flujo multi-agente. El Fisiólogo (Gemini) está analizando variables climáticas y patológicas..."):
+                
+                # --- AQUÍ ESTÁ PREPARADA LA ARQUITECTURA PARA GPT Y CLAUDE ---
+                # 1. IA PATÓLOGO (Visión) -> Futura integración GPT-4o
+                # informe_patologo = llamar_api_gpt4o(foto_planta, cultivo_seleccionado, parte_afectada, tiempo_sintomas_str)
+                
+                # 2. IA FISIÓLOGO (Contexto) -> Gemini 1.5 (Activo)
                 try:
                     model = genai.GenerativeModel('gemini-1.5-flash')
                     nombre_terreno = st.session_state.nombre_lote_global if st.session_state.nombre_lote_global else "Lote sin nombre"
                     
                     prompt_experto = f"""
-                    Eres un sistema experto en agronomía tropical y fitopatología.
+                    Eres el 'Fisiólogo', un sistema experto en epidemiología y agronomía tropical.
                     
-                    CONTEXTO ESPACIAL DEL LOTE:
-                    - Nombre del Lote: {nombre_terreno}
-                    - Área exacta calculada satelitalmente: {area_calculada:.2f} Hectáreas.
+                    CONTEXTO ESPACIAL Y FENOLÓGICO:
+                    - Área de la plantación: {area_calculada:.2f} Hectáreas.
+                    - Cultivo: {cultivo_seleccionado} (Tiempo de existencia: {tiempo_planta_str}).
                     - Altitud: {elevacion_actual} m.s.n.m.
                     - Clima reciente: {clima_texto}
                     
-                    SÍNTOMAS REPORTADOS POR EL AGRICULTOR:
+                    SÍNTOMAS (CRONOLOGÍA EXACTA):
                     - Órgano afectado: {parte_afectada}
-                    - Días con síntomas: {dias_sintomas} días
+                    - Tiempo exacto de evolución del síntoma: {tiempo_sintomas_str}
                     - Descripción: {sintomas_texto}
                     
-                    INSTRUCCIONES DE RAZONAMIENTO (Chain-of-Thought):
-                    Debes responder SIEMPRE en este formato exacto Markdown:
-                    **🔬 ANÁLISIS TÉCNICO:**
-                    [Razonamiento conectando altitud, clima y síntomas]
+                    INSTRUCCIONES DE RAZONAMIENTO:
+                    Considerando si la enfermedad ha evolucionado en días (agudo) o meses (crónico), responde en este formato:
+                    **🔬 ANÁLISIS TÉCNICO (El Fisiólogo):**
+                    [Razonamiento conectando clima, tiempo de existencia y velocidad de avance del síntoma]
                     **🚨 DIAGNÓSTICO PRELIMINAR:**
                     [2-3 causas probables]
-                    **📋 RECOMENDACIONES DE MANEJO Y DOSIFICACIÓN:**
-                    1. **Tratamiento Inmediato:** [Acciones]
-                    2. **Receta Agronómica (CRÍTICO):** Si recomiendas un producto químico u orgánico, DEBES CALCULAR LA DOSIS TOTAL EXACTA para el área de {area_calculada:.2f} Hectáreas de este lote. No des solo la dosis por hectárea, haz la multiplicación. (Ejemplo: Si la dosis es 1.5 Kg/ha, indica "Aplique 3.66 Kg en total").
-                    3. **Preventivas:** [Acciones]
-                    **⚠️ NIVEL DE URGENCIA:** [Bajo / Medio / Alto / Crítico]
+                    **📋 RECETA AGRONÓMICA (Dosis exacta requerida):**
+                    Calcula la dosis total de producto químico/orgánico que se debe mezclar para fumigar las {area_calculada:.2f} Hectáreas de este lote.
                     """
                     paquete_analisis = [prompt_experto]
                     if foto_planta is not None:
@@ -600,7 +551,11 @@ elif opcion_menu == "Diagnóstico IA":
                         paquete_analisis.append(imagen_pil)
                         
                     respuesta = model.generate_content(paquete_analisis)
-                    st.success(f"✅ Diagnóstico Completado para: **{nombre_terreno}**")
+                    
+                    # 3. IA DIRECTOR (Juez) -> Futura integración Claude 3.5 Sonnet
+                    # receta_final_auditada = llamar_api_claude(informe_patologo, respuesta.text, area_calculada)
+                    
+                    st.success(f"✅ Diagnóstico Fisiológico Completado para: **{nombre_terreno}**")
                     st.markdown("---")
                     st.write(respuesta.text)
                 except Exception as e:
