@@ -50,7 +50,7 @@ try:
 except Exception as e:
     gemini_activo = False
 
-# --- 2. DISEÑO UI/UX CORPORATIVO (PALETA OSCURA/MENÚ MEJORADO) ---
+# --- 2. DISEÑO UI/UX CORPORATIVO ---
 st.markdown("""
 <style>
     .stApp { background-color: #000000; color: #ffffff; }
@@ -87,141 +87,91 @@ st.markdown("""
     iframe[title="streamlit_geolocation.streamlit_geolocation"] {
         background-color: transparent !important; color-scheme: dark; border-radius: 5px;
     }
-    
-    /* Pequeño ajuste para los labels de los nuevos controles de tiempo */
     .time-label { font-size: 14px; font-weight: 600; color: #ffffff; margin-bottom: 5px; display: block; }
 </style>
 """, unsafe_allow_html=True)
 
 c_logo, c_menu = st.columns([2, 8])
-
-with c_logo:
-    st.markdown("<h2 style='color: #2E7D32; margin-top: 0;'>🌿 AgroIA</h2>", unsafe_allow_html=True)
-
+with c_logo: st.markdown("<h2 style='color: #2E7D32; margin-top: 0;'>🌿 AgroIA</h2>", unsafe_allow_html=True)
 with c_menu:
     opcion_menu = st.radio(
         "Navegación Principal", 
         ["Mapa", "Meteorología", "Suelo", "Estado de la Planta", "Satélite", "Diagnóstico IA"],
-        horizontal=True,
-        label_visibility="collapsed"
+        horizontal=True, label_visibility="collapsed"
     )
 st.markdown("<br>", unsafe_allow_html=True) 
 
-# --- FUNCIONES AUXILIARES Y APIs ---
+# --- FUNCIONES AUXILIARES ---
 def grados_a_direccion(grados):
     arr = ["Norte", "Norte-Noreste", "Noreste", "Este-Noreste", "Este", "Este-Sureste", "Sureste", "Sur-Sureste", "Sur", "Sur-Suroeste", "Suroeste", "Oeste-Suroeste", "Oeste", "Oeste-Noroeste", "Noroeste", "Norte-Noroeste"]
     return arr[int((grados/22.5)+.5) % 16]
 
 def obtener_elevacion(lat, lon):
-    url = f"https://api.open-meteo.com/v1/elevation?latitude={lat}&longitude={lon}"
-    try: return requests.get(url).json()['elevation'][0]
+    try: return requests.get(f"https://api.open-meteo.com/v1/elevation?latitude={lat}&longitude={lon}").json()['elevation'][0]
     except: return "No disponible"
         
 def obtener_datos_clima(lat, lon):
-    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true&hourly=temperature_2m,relativehumidity_2m,dewpoint_2m,precipitation_probability,pressure_msl,windspeed_10m,winddirection_10m,et0_fao_evapotranspiration&past_days=3&timezone=America/Guayaquil"
-    try: return requests.get(url).json()
+    try: return requests.get(f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true&hourly=temperature_2m,relativehumidity_2m,dewpoint_2m,precipitation_probability,pressure_msl,windspeed_10m,winddirection_10m,et0_fao_evapotranspiration&past_days=3&timezone=America/Guayaquil").json()
     except: return None
 
 def obtener_datos_suelo_copernicus(lat, lon):
-    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=soil_temperature_0_to_7cm,soil_temperature_7_to_28cm,soil_temperature_28_to_100cm,soil_temperature_100_to_255cm,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm,soil_moisture_28_to_100cm,soil_moisture_100_to_255cm&models=ecmwf_ifs&timezone=America/Guayaquil"
     try: 
-        respuesta = requests.get(url, timeout=10)
-        if respuesta.status_code == 200:
-            data = respuesta.json()
+        res = requests.get(f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=soil_temperature_0_to_7cm,soil_temperature_7_to_28cm,soil_temperature_28_to_100cm,soil_temperature_100_to_255cm,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm,soil_moisture_28_to_100cm,soil_moisture_100_to_255cm&models=ecmwf_ifs&timezone=America/Guayaquil", timeout=10)
+        if res.status_code == 200:
+            data = res.json()
             if 'hourly' in data and 'time' in data['hourly']:
-                tiempos = data['hourly']['time']
-                humedad_sup = data['hourly'].get('soil_moisture_0_to_7cm', [])
-                
-                idx_valido = 0
-                for i, val in enumerate(humedad_sup):
-                    if val is not None:
-                        idx_valido = i
-                        break
-                
-                resultado_limpio = {}
-                for key, values in data['hourly'].items():
-                    if isinstance(values, list) and len(values) > idx_valido:
-                        resultado_limpio[key] = values[idx_valido]
-                        
-                resultado_limpio['timestamp_extraido'] = tiempos[idx_valido]
-                return resultado_limpio
+                idx_valido = next((i for i, v in enumerate(data['hourly'].get('soil_moisture_0_to_7cm', [])) if v is not None), 0)
+                res_limpio = {k: v[idx_valido] for k, v in data['hourly'].items() if isinstance(v, list) and len(v) > idx_valido}
+                res_limpio['timestamp_extraido'] = data['hourly']['time'][idx_valido]
+                return res_limpio
         return None
     except: return None
 
 def obtener_datos_nasa_power(lat, lon, start_date, end_date):
-    url = f"https://power.larc.nasa.gov/api/temporal/daily/point?parameters=ALLSKY_SFC_SW_DWN,PRECTOTCORR&community=AG&longitude={lon}&latitude={lat}&start={start_date}&end={end_date}&format=JSON"
     try:
-        respuesta = requests.get(url, timeout=15)
-        if respuesta.status_code == 200:
-            datos = respuesta.json()
-            if 'properties' in datos and 'parameter' in datos['properties']:
-                df = pd.DataFrame(datos['properties']['parameter'])
-                if not df.empty:
-                    df.index = pd.to_datetime(df.index, format='%Y%m%d')
-                    return df
+        res = requests.get(f"https://power.larc.nasa.gov/api/temporal/daily/point?parameters=ALLSKY_SFC_SW_DWN,PRECTOTCORR&community=AG&longitude={lon}&latitude={lat}&start={start_date}&end={end_date}&format=JSON", timeout=15)
+        if res.status_code == 200:
+            df = pd.DataFrame(res.json().get('properties', {}).get('parameter', {}))
+            if not df.empty:
+                df.index = pd.to_datetime(df.index, format='%Y%m%d')
+                return df
         return None
-    except:
-        return None
+    except: return None
 
 def evaluar_potencial_crecimiento(lat, lon):
-    end_date = (datetime.today() - timedelta(days=7)).strftime('%Y%m%d')
-    start_date = (datetime.today() - timedelta(days=14)).strftime('%Y%m%d')
+    end = (datetime.today() - timedelta(days=7)).strftime('%Y%m%d')
+    start = (datetime.today() - timedelta(days=14)).strftime('%Y%m%d')
+    df_nasa = obtener_datos_nasa_power(lat, lon, start, end)
+    ds = obtener_datos_suelo_copernicus(lat, lon)
     
-    df_nasa = obtener_datos_nasa_power(lat, lon, start_date, end_date)
-    datos_suelo = obtener_datos_suelo_copernicus(lat, lon)
+    if df_nasa is None or df_nasa.empty or ds is None: return None
+        
+    h_raiz = ds.get('soil_moisture_28_to_100cm', 0.0) or 0.0
+    rad = df_nasa['ALLSKY_SFC_SW_DWN'].mean() if 'ALLSKY_SFC_SW_DWN' in df_nasa else 0.0
+    lluvia = df_nasa['PRECTOTCORR'].sum() if 'PRECTOTCORR' in df_nasa else 0.0
     
-    if df_nasa is None or df_nasa.empty or datos_suelo is None:
-        return None
+    if rad > 15 and h_raiz > 0.25: e, m = "🟢 Óptimo", "Excelente reserva profunda."
+    elif rad > 15 and h_raiz < 0.15: e, m = "🔴 Alerta Crítica (Estrés)", "Acuífero agotado. Riegue ya."
+    elif rad <= 15 and h_raiz > 0.30: e, m = "🟡 Alerta Fúngica", "Poca luz y suelo saturado. Riesgo de hongos."
+    else: e, m = "🔵 Moderado", "Condiciones estándar."
         
-    humedad_raiz = datos_suelo.get('soil_moisture_28_to_100cm', 0.0)
-    if humedad_raiz is None: 
-        humedad_raiz = 0.0
-        
-    radiacion_promedio = df_nasa['ALLSKY_SFC_SW_DWN'].mean() if 'ALLSKY_SFC_SW_DWN' in df_nasa else 0.0
-    lluvia_acumulada = df_nasa['PRECTOTCORR'].sum() if 'PRECTOTCORR' in df_nasa else 0.0
-    
-    if radiacion_promedio > 15 and humedad_raiz > 0.25:
-        estado = "🟢 Óptimo"
-        mensaje = "Alta energía solar respaldada por excelente reserva de agua profunda. El cultivo está en condiciones ideales."
-    elif radiacion_promedio > 15 and humedad_raiz < 0.15:
-        estado = "🔴 Alerta Crítica (Estrés Termo-Hídrico)"
-        mensaje = "Alta radiación solar pero el acuífero radicular está severamente agotado. Riesgo inminente de marchitez permanente."
-    elif radiacion_promedio <= 15 and humedad_raiz > 0.30:
-        estado = "🟡 Alerta Fúngica"
-        mensaje = "Baja radiación solar y suelo saturado de agua. Las raíces corren riesgo de asfixia y proliferación de hongos."
-    else:
-        estado = "🔵 Moderado"
-        mensaje = "Condiciones de crecimiento estándar. Continúe con sus prácticas de manejo habituales."
-        
-    return {
-        "estado": estado,
-        "mensaje": mensaje,
-        "radiacion": round(radiacion_promedio, 2),
-        "humedad": humedad_raiz,
-        "lluvia": round(lluvia_acumulada, 2)
-    }
+    return {"estado": e, "mensaje": m, "radiacion": round(rad, 2), "humedad": h_raiz, "lluvia": round(lluvia, 2)}
 
 def calcular_area_hectareas(coordenadas):
-    if not coordenadas or len(coordenadas) < 3:
-        return 0.0
-    radio_tierra = 6378137.0 
+    if not coordenadas or len(coordenadas) < 3: return 0.0
     area = 0.0
-    temp_coords = coordenadas[:]
-    if temp_coords[0] != temp_coords[-1]:
-        temp_coords.append(temp_coords[0])
-        
-    for i in range(len(temp_coords) - 1):
-        lon1, lat1 = math.radians(temp_coords[i][0]), math.radians(temp_coords[i][1])
-        lon2, lat2 = math.radians(temp_coords[i+1][0]), math.radians(temp_coords[i+1][1])
+    tc = coordenadas[:]
+    if tc[0] != tc[-1]: tc.append(tc[0])
+    for i in range(len(tc) - 1):
+        lon1, lat1 = math.radians(tc[i][0]), math.radians(tc[i][1])
+        lon2, lat2 = math.radians(tc[i+1][0]), math.radians(tc[i+1][1])
         area += (lon2 - lon1) * (2.0 + math.sin(lat1) + math.sin(lat2))
-    area = abs(area * radio_tierra * radio_tierra / 2.0)
-    return area / 10000.0 
+    return abs(area * (6378137.0**2) / 2.0) / 10000.0 
 
 # --- 3. DESARROLLO DE LAS PÁGINAS ---
 
 if opcion_menu == "Mapa":
     st.subheader("📍 Coordenadas de la Parcela")
-    
     c_lat, c_lon, c_gps = st.columns([2, 2, 2])
     with c_lat: nuevo_lat = st.number_input("Latitud", value=st.session_state.lat, format="%.4f")
     with c_lon: nuevo_lon = st.number_input("Longitud", value=st.session_state.lon, format="%.4f")
@@ -239,7 +189,6 @@ if opcion_menu == "Mapa":
     m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=14)
     folium.TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base').add_to(m)
     folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="green", icon="leaf")).add_to(m)
-    
     output = st_folium(m, width="100%", height=450, key="mapa_principal", returned_objects=["last_clicked"])
 
     if output and output.get('last_clicked'):
@@ -253,7 +202,6 @@ elif opcion_menu == "Meteorología":
     json_clima = obtener_datos_clima(st.session_state.lat, st.session_state.lon)
     if json_clima and 'hourly' in json_clima:
         cur = json_clima['current_weather']
-        
         st.markdown(f"**Condiciones en superficie:** Viento hacia el **{grados_a_direccion(cur['winddirection'])}** a {cur['windspeed']} km/h")
         
         c1, c2, c3, c4 = st.columns(4)
@@ -269,7 +217,6 @@ elif opcion_menu == "Meteorología":
         })
         
         st.markdown("<br>", unsafe_allow_html=True)
-        
         fig_et0 = go.Figure()
         fig_et0.add_trace(go.Scatter(
             x=df_hourly['Fecha_Hora'], y=df_hourly['Evapotranspiración (mm)'], fill='tozeroy', mode='lines',
@@ -290,42 +237,28 @@ elif opcion_menu == "Meteorología":
 elif opcion_menu == "Suelo":
     st.subheader(f"🌍 Perfil Físico del Suelo (ERA5-Land: Copernicus)")
     st.info("Modelo Termodinámico e Hidrológico Asimilado. Representa el volumen de agua pura contenida en la matriz del suelo y su temperatura.")
-    
     datos_suelo = obtener_datos_suelo_copernicus(st.session_state.lat, st.session_state.lon)
     
     if datos_suelo:
         ts = datos_suelo.get('timestamp_extraido')
         if ts:
-            dt_obj = datetime.strptime(ts, "%Y-%m-%dT%H:%M")
-            fecha_formateada = dt_obj.strftime("%d de %B de %Y a las %H:%M")
+            fecha_formateada = datetime.strptime(ts, "%Y-%m-%dT%H:%M").strftime("%d de %B de %Y a las %H:%M")
             st.success(f"⏱️ **Lectura Satelital Procesada:** Los datos corresponden al **{fecha_formateada}**.")
             
         st.markdown("### 💧 Humedad Volumétrica del Suelo (m³/m³)")
         ch1, ch2, ch3, ch4 = st.columns(4)
-        
-        m_0_7 = datos_suelo.get('soil_moisture_0_to_7cm')
-        m_7_28 = datos_suelo.get('soil_moisture_7_to_28cm')
-        m_28_100 = datos_suelo.get('soil_moisture_28_to_100cm')
-        m_100_255 = datos_suelo.get('soil_moisture_100_to_255cm')
-        
-        ch1.metric("0 - 7 cm", f"{m_0_7} m³" if m_0_7 is not None else "N/D")
-        ch2.metric("7 - 28 cm", f"{m_7_28} m³" if m_7_28 is not None else "N/D")
-        ch3.metric("28 - 100 cm", f"{m_28_100} m³" if m_28_100 is not None else "N/D")
-        ch4.metric("100 - 289 cm", f"{m_100_255} m³" if m_100_255 is not None else "N/D")
+        ch1.metric("0 - 7 cm", f"{datos_suelo.get('soil_moisture_0_to_7cm')} m³" if datos_suelo.get('soil_moisture_0_to_7cm') is not None else "N/D")
+        ch2.metric("7 - 28 cm", f"{datos_suelo.get('soil_moisture_7_to_28cm')} m³" if datos_suelo.get('soil_moisture_7_to_28cm') is not None else "N/D")
+        ch3.metric("28 - 100 cm", f"{datos_suelo.get('soil_moisture_28_to_100cm')} m³" if datos_suelo.get('soil_moisture_28_to_100cm') is not None else "N/D")
+        ch4.metric("100 - 289 cm", f"{datos_suelo.get('soil_moisture_100_to_255cm')} m³" if datos_suelo.get('soil_moisture_100_to_255cm') is not None else "N/D")
         
         st.markdown("---")
         st.markdown("### 🌡️ Temperatura del Perfil del Suelo (°C)")
         ct1, ct2, ct3, ct4 = st.columns(4)
-        
-        t_0_7 = datos_suelo.get('soil_temperature_0_to_7cm')
-        t_7_28 = datos_suelo.get('soil_temperature_7_to_28cm')
-        t_28_100 = datos_suelo.get('soil_temperature_28_to_100cm')
-        t_100_255 = datos_suelo.get('soil_temperature_100_to_255cm')
-        
-        ct1.metric("0 - 7 cm", f"{t_0_7} °C" if t_0_7 is not None else "N/D")
-        ct2.metric("7 - 28 cm", f"{t_7_28} °C" if t_7_28 is not None else "N/D")
-        ct3.metric("28 - 100 cm", f"{t_28_100} °C" if t_28_100 is not None else "N/D")
-        ct4.metric("100 - 289 cm", f"{t_100_255} °C" if t_100_255 is not None else "N/D")
+        ct1.metric("0 - 7 cm", f"{datos_suelo.get('soil_temperature_0_to_7cm')} °C" if datos_suelo.get('soil_temperature_0_to_7cm') is not None else "N/D")
+        ct2.metric("7 - 28 cm", f"{datos_suelo.get('soil_temperature_7_to_28cm')} °C" if datos_suelo.get('soil_temperature_7_to_28cm') is not None else "N/D")
+        ct3.metric("28 - 100 cm", f"{datos_suelo.get('soil_temperature_28_to_100cm')} °C" if datos_suelo.get('soil_temperature_28_to_100cm') is not None else "N/D")
+        ct4.metric("100 - 289 cm", f"{datos_suelo.get('soil_temperature_100_to_255cm')} °C" if datos_suelo.get('soil_temperature_100_to_255cm') is not None else "N/D")
     else:
         st.error("❌ Error de comunicación con los servidores satelitales. Asegúrese de ingresar coordenadas válidas continentales.")
 
@@ -334,72 +267,104 @@ elif opcion_menu == "Estado de la Planta":
     st.info("Algoritmo de Integración Espacial: Cruza la energía solar acumulada (NASA) con las reservas de agua subterránea (Copernicus) para detectar estrés vegetativo invisible.")
     
     with st.spinner("Analizando matrices satelitales conjuntas (NASA POWER + Copernicus)..."):
-        resultado_sinergia = evaluar_potencial_crecimiento(st.session_state.lat, st.session_state.lon)
+        res_sinergia = evaluar_potencial_crecimiento(st.session_state.lat, st.session_state.lon)
         
-    if resultado_sinergia:
-        st.markdown(f"### Diagnóstico del Lote: {resultado_sinergia['estado']}")
-        st.write(f"**Análisis:** {resultado_sinergia['mensaje']}")
-        
+    if res_sinergia:
+        st.markdown(f"### Diagnóstico del Lote: {res_sinergia['estado']}")
+        st.write(f"**Análisis:** {res_sinergia['mensaje']}")
         st.markdown("---")
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.metric("☀️ Energía PAR (NASA)", f"{resultado_sinergia['radiacion']} MJ/m²/día")
+            st.metric("☀️ Energía PAR (NASA)", f"{res_sinergia['radiacion']} MJ/m²/día")
             st.markdown('<div class="metric-caption">Promedio de Radiación Solar (últimos 7 días)</div>', unsafe_allow_html=True)
         with c2:
-            st.metric("💧 Reserva Profunda", f"{resultado_sinergia['humedad']} m³/m³")
+            st.metric("💧 Reserva Profunda", f"{res_sinergia['humedad']} m³/m³")
             st.markdown('<div class="metric-caption">Humedad en zona radicular profunda (28-100 cm) extraída de Copernicus</div>', unsafe_allow_html=True)
         with c3:
-            st.metric("🌧️ Lluvia Acumulada", f"{resultado_sinergia['lluvia']} mm")
+            st.metric("🌧️ Lluvia Acumulada", f"{res_sinergia['lluvia']} mm")
             st.markdown('<div class="metric-caption">Precipitación total acumulada en la última semana procesada por la NASA</div>', unsafe_allow_html=True)
     else:
         st.error("❌ Error de comunicación con los servidores espaciales. Verifique las coordenadas.")
 
 elif opcion_menu == "Satélite":
     st.subheader(f"🛰️ Análisis Satelital de Salud Vegetal (NDVI)")
-    if not gee_activo:
-        st.error("⚠️ Error: Google Earth Engine no está inicializado.")
+    if not gee_activo: st.error("⚠️ Error: Google Earth Engine no está inicializado.")
     else:
         with st.spinner("Procesando mosaico satelital libre de nubes..."):
             try:
                 punto = ee.Geometry.Point([st.session_state.lon, st.session_state.lat])
                 fecha_fin = datetime.today()
                 fecha_inicio = fecha_fin - timedelta(days=90)
-                
                 def enmascarar_nubes(imagen):
                     qa = imagen.select('QA60') 
-                    mascara = qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0))
-                    return imagen.updateMask(mascara)
+                    return imagen.updateMask(qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0)))
                 
                 coleccion = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED").filterBounds(punto).filterDate(fecha_inicio.strftime('%Y-%m-%d'), fecha_fin.strftime('%Y-%m-%d')).map(enmascarar_nubes) 
                 
-                if coleccion.size().getInfo() == 0:
-                    st.warning("☁️ Cobertura nubosa total y permanente en este trimestre.")
+                if coleccion.size().getInfo() == 0: st.warning("☁️ Cobertura nubosa total y permanente en este trimestre.")
                 else:
-                    imagen_limpia = coleccion.median()
                     st.info("🧩 **Mosaico Satelital:** Fusión matemática de los píxeles despejados en los últimos 90 días.")
-                    
-                    ndvi = imagen_limpia.normalizedDifference(['B8', 'B4']).rename('NDVI')
-                    vis_params = {'min': 0.1, 'max': 0.6, 'palette': ['#d73027', '#f46d43', '#fdae61', '#fee08b', '#d9ef8b', '#a6d96a', '#66bd63', '#1a9850']}
-                    map_id_dict = ee.Image(ndvi).getMapId(vis_params)
+                    ndvi = coleccion.median().normalizedDifference(['B8', 'B4']).rename('NDVI')
+                    map_id_dict = ee.Image(ndvi).getMapId({'min': 0.1, 'max': 0.6, 'palette': ['#d73027', '#f46d43', '#fdae61', '#fee08b', '#d9ef8b', '#a6d96a', '#66bd63', '#1a9850']})
                     
                     m_ndvi = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=15, max_zoom=20)
-                    folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base').add_to(m_ndvi)
-                    folium.TileLayer(tiles=map_id_dict['tile_fetcher'].url_format, attr='Google Earth Engine', name='NDVI', overlay=True, opacity=0.7, max_zoom=20, max_native_zoom=16).add_to(m_ndvi)
+                    folium.TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base').add_to(m_ndvi)
+                    folium.TileLayer(tiles=map_id_dict['tile_fetcher'].url_format, attr='Google Earth Engine', overlay=True, opacity=0.7).add_to(m_ndvi)
                     folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="red")).add_to(m_ndvi)
                     st_folium(m_ndvi, width="100%", height=450, key="mapa_ndvi")
-            except Exception as e:
-                st.error(f"❌ Error satelital: {e}")
+            except Exception as e: st.error(f"❌ Error satelital: {e}")
 
+# --- SECCIÓN DIAGNÓSTICO IA MEJORADA (Categorías y Tiempo Compuesto) ---
 elif opcion_menu == "Diagnóstico IA":
     st.subheader("🤖 Diagnóstico Fitosanitario y Dosificación (Múltiples IA)")
     st.warning("**⚠️ Aviso Legal:** Sistema operado por Comité Agéntico. Verifique con un agrónomo.")
     
-    # 1. GPS Y MI UBICACIÓN
-    st.markdown("### 1. Geolocalice su Lote")
+    # 1. PERFIL DEL LOTE (NUEVA CLASIFICACIÓN DE CULTIVOS)
+    st.markdown("### 1. Perfil del Lote")
+    
+    # Diccionario de categorías y cultivos
+    cultivos_dict = {
+        "🌾 Granos y Cereales (Ciclo Corto)": ["Arroz", "Maíz Suave", "Maíz Duro", "Soya", "Trigo", "Avena"],
+        "🍫 Perennes / Exportación (Larga Duración)": ["Cacao", "Banano", "Plátano", "Café", "Palma Aceitera", "Mango"],
+        "🥔 Raíces y Tubérculos": ["Papa", "Yuca", "Camote", "Zanahoria"],
+        "🍅 Hortícolas y Legumbres": ["Tomate", "Cebolla", "Pimiento", "Brócoli", "Lechuga", "Fréjol", "Arveja"],
+        "Otro (Especifique)": ["Otro"]
+    }
+    
+    c_cat, c_cultivo = st.columns(2)
+    with c_cat:
+        categoria_seleccionada = st.selectbox("Categoría de Cultivo:", list(cultivos_dict.keys()))
+    with c_cultivo:
+        cultivo_seleccionado = st.selectbox("Especifique el Cultivo:", cultivos_dict[categoria_seleccionada])
+        if cultivo_seleccionado == "Otro": cultivo_seleccionado = st.text_input("Ingrese el nombre del cultivo:")
+
+    # LÓGICA DE TIEMPO DINÁMICA (COMPUESTA)
+    st.markdown("#### Cronología del Cultivo")
+    es_perenne = categoria_seleccionada == "🍫 Perennes / Exportación (Larga Duración)"
+    
+    if es_perenne:
+        st.info("🌳 Para cultivos perennes, indique la edad total de la planta y la fecha de la última intervención (poda/cosecha).")
+        col_ed1, col_ed2, col_ed3 = st.columns(3)
+        with col_ed1:
+            edad_anios = st.number_input("Años:", min_value=0, value=3)
+        with col_ed2:
+            edad_meses = st.number_input("Meses:", min_value=0, max_value=11, value=0)
+        with col_ed3:
+            fecha_ultima_cosecha = st.date_input("Última Cosecha / Poda:", value=datetime.today() - timedelta(days=30))
+        
+        tiempo_planta_str = f"Planta adulta de {edad_anios} años y {edad_meses} meses. Última cosecha/poda hace {(datetime.today().date() - fecha_ultima_cosecha).days} días."
+    else:
+        st.info("🌱 Para cultivos de ciclo corto, indique la fecha exacta de siembra.")
+        fecha_siembra = st.date_input("Fecha de Siembra:", value=datetime.today() - timedelta(days=45))
+        dias_desde_siembra = (datetime.today().date() - fecha_siembra).days
+        tiempo_planta_str = f"Cultivo de ciclo corto con {dias_desde_siembra} días desde la siembra."
+
+    st.markdown("---")
+
+    # 2. GPS Y DELIMITACIÓN
+    st.markdown("### 2. Geolocalice y Delimite su Terreno")
     c_desc_gps, c_btn_gps = st.columns([4, 1])
-    with c_desc_gps:
-        st.write("Presione el botón para capturar las coordenadas exactas donde se encuentra parado. Esto centrará el mapa.")
-        st.caption("*Nota: En celulares, requiere conexión HTTPS (publicada).*")
+    with c_desc_gps: st.write("Presione el botón para centrar el mapa. Luego marque las esquinas de su lote.")
     with c_btn_gps:
         ubicacion_gps = streamlit_geolocation()
         if ubicacion_gps['latitude'] is not None and ubicacion_gps['longitude'] is not None:
@@ -410,28 +375,24 @@ elif opcion_menu == "Diagnóstico IA":
                 st.session_state.lon = lon_obtenida
                 st.rerun()
 
-    # 2. DELIMITACIÓN INTERACTIVA
-    st.markdown("### 2. Delimite su Terreno")
-    st.write("Use los botones a continuación para construir el perímetro de su lote punto por punto.")
-    
     c_btn_marcar, c_btn_deshacer, c_btn_cerrar = st.columns(3)
     puntos_mapeo = st.session_state.temp_coords
     poligono_cerrado = False
     
     with c_btn_marcar:
-        if st.button("📍 Marcar Esquina actual (GPS)"):
+        if st.button("📍 Marcar Esquina (GPS)"):
             puntos_mapeo.append([st.session_state.lon, st.session_state.lat])
             st.session_state.temp_coords = puntos_mapeo
             st.rerun()
     with c_btn_deshacer:
-        if st.button("↩️ Corregir Último Punto"):
+        if st.button("↩️ Deshacer Punto"):
             if puntos_mapeo:
                 puntos_mapeo.pop()
                 st.session_state.temp_coords = puntos_mapeo
                 st.rerun()
     with c_btn_cerrar:
         if len(puntos_mapeo) >= 3:
-            if st.button("✅ Cerrar Terreno y Calcular Área"):
+            if st.button("✅ Cerrar Polígono"):
                 puntos_mapeo.append(puntos_mapeo[0])
                 st.session_state.temp_coords = puntos_mapeo
                 st.rerun()
@@ -450,17 +411,17 @@ elif opcion_menu == "Diagnóstico IA":
             else:
                 folium.PolyLine(locations=coordenadas_linea, color="#2196F3", weight=3, dash_array='5, 5').add_to(m_diag)
     
-    st_folium(m_diag, width="100%", height=450, key="mapa_diagnostico_puntos", returned_objects=[])
+    st_folium(m_diag, width="100%", height=450, key="mapa_diag_puntos", returned_objects=[])
     
     area_calculada = 0.0
     if poligono_cerrado:
         area_calculada = calcular_area_hectareas(puntos_mapeo[:-1])
-        st.success(f"✅ Terreno delimitado con éxito. Superficie detectada por satélite: **{area_calculada:.2f} Hectáreas**")
+        st.success(f"✅ Superficie satelital: **{area_calculada:.2f} Hectáreas**")
 
     st.markdown("---")
 
-    # 4. FORMULARIO DE DIAGNÓSTICO (TIEMPOS EXACTOS MEJORADOS)
-    st.markdown("### 3. Reporte Fitosanitario")
+    # 3. REPORTE FITOSANITARIO
+    st.markdown("### 3. Reporte de Síntomas")
     
     elevacion_actual = obtener_elevacion(st.session_state.lat, st.session_state.lon)
     clima_actual = obtener_datos_clima(st.session_state.lat, st.session_state.lon)
@@ -472,29 +433,14 @@ elif opcion_menu == "Diagnóstico IA":
     with c_sint1:
         nombre_lote_form = st.text_input("Asigne un nombre a este Lote:", value=st.session_state.nombre_lote_global, placeholder="Ej: Lote de la Loma")
         if nombre_lote_form: st.session_state.nombre_lote_global = nombre_lote_form
-        st.markdown("<div class='metric-caption' style='margin-bottom:15px;'>Nombrar su lote le permitirá guardar este diagnóstico en su historial.</div>", unsafe_allow_html=True)
-            
-        cultivo_seleccionado = st.selectbox("🌱 Cultivo afectado:", ["Cacao", "Banano", "Arroz", "Maíz", "Otro"])
-        if cultivo_seleccionado == "Otro": cultivo_seleccionado = st.text_input("Especifique:")
-        
-        # --- NUEVO: Tiempo de existencia de la planta ---
-        st.markdown("<span class='time-label'>📅 Tiempo de existencia de la planta:</span>", unsafe_allow_html=True)
-        col_ed1, col_ed2 = st.columns(2)
-        with col_ed1:
-            edad_num = st.number_input("Cantidad", min_value=0, value=1, label_visibility="collapsed", key="edad_num")
-        with col_ed2:
-            edad_uni = st.selectbox("Unidad", ["Años", "Meses", "Semanas", "Días"], label_visibility="collapsed", key="edad_uni")
-        tiempo_planta_str = f"{edad_num} {edad_uni}"
         
         parte_afectada = st.selectbox("🍂 Órgano visiblemente afectado:", ["Hojas", "Tallo o Tronco", "Fruto o Espiga", "Raíz", "Toda la planta"])
         
-        # --- NUEVO: Tiempo con síntomas ---
-        st.markdown("<span class='time-label'>⏱️ Tiempo con síntomas:</span>", unsafe_allow_html=True)
+        # TIEMPO CON SÍNTOMAS (Compuesto para mayor precisión)
+        st.markdown("<span class='time-label'>⏱️ Tiempo exacto de evolución del síntoma:</span>", unsafe_allow_html=True)
         col_sin1, col_sin2 = st.columns(2)
-        with col_sin1:
-            sint_num = st.number_input("Cantidad", min_value=1, value=5, label_visibility="collapsed", key="sint_num")
-        with col_sin2:
-            sint_uni = st.selectbox("Unidad", ["Días", "Semanas", "Meses"], label_visibility="collapsed", key="sint_uni")
+        with col_sin1: sint_num = st.number_input("Cantidad", min_value=1, value=5, label_visibility="collapsed")
+        with col_sin2: sint_uni = st.selectbox("Unidad", ["Días", "Semanas", "Meses"], label_visibility="collapsed")
         tiempo_sintomas_str = f"{sint_num} {sint_uni}"
         
     with c_sint2:
@@ -504,20 +450,11 @@ elif opcion_menu == "Diagnóstico IA":
         if foto_planta is not None: st.image(foto_planta, use_container_width=True)
 
     if st.button("🧠 Ejecutar Comité de IA (Diagnóstico Multi-Agente)"):
-        if not gemini_activo:
-            st.error("⚠️ La API de Gemini no está configurada.")
-        elif not poligono_cerrado:
-            st.warning("⚠️ Por favor, delimite primero el perímetro de su lote en el mapa (Paso 2) para poder calcular la dosis exacta de los tratamientos.")
-        elif len(sintomas_texto) < 5 and not foto_planta:
-            st.warning("⚠️ Describa el problema o suba una foto.")
+        if not gemini_activo: st.error("⚠️ La API de Gemini no está configurada.")
+        elif not poligono_cerrado: st.warning("⚠️ Por favor, delimite primero el perímetro de su lote en el mapa (Paso 2).")
+        elif len(sintomas_texto) < 5 and not foto_planta: st.warning("⚠️ Describa el problema o suba una foto.")
         else:
-            with st.spinner("🧠 Inicializando flujo multi-agente. El Fisiólogo (Gemini) está analizando variables climáticas y patológicas..."):
-                
-                # --- AQUÍ ESTÁ PREPARADA LA ARQUITECTURA PARA GPT Y CLAUDE ---
-                # 1. IA PATÓLOGO (Visión) -> Futura integración GPT-4o
-                # informe_patologo = llamar_api_gpt4o(foto_planta, cultivo_seleccionado, parte_afectada, tiempo_sintomas_str)
-                
-                # 2. IA FISIÓLOGO (Contexto) -> Gemini 1.5 (Activo)
+            with st.spinner("🧠 Inicializando flujo multi-agente. El Fisiólogo (Gemini) está analizando la fenología y clima..."):
                 try:
                     model = genai.GenerativeModel('gemini-1.5-flash')
                     nombre_terreno = st.session_state.nombre_lote_global if st.session_state.nombre_lote_global else "Lote sin nombre"
@@ -527,7 +464,7 @@ elif opcion_menu == "Diagnóstico IA":
                     
                     CONTEXTO ESPACIAL Y FENOLÓGICO:
                     - Área de la plantación: {area_calculada:.2f} Hectáreas.
-                    - Cultivo: {cultivo_seleccionado} (Tiempo de existencia: {tiempo_planta_str}).
+                    - Estado del Cultivo: {tiempo_planta_str}
                     - Altitud: {elevacion_actual} m.s.n.m.
                     - Clima reciente: {clima_texto}
                     
@@ -537,7 +474,7 @@ elif opcion_menu == "Diagnóstico IA":
                     - Descripción: {sintomas_texto}
                     
                     INSTRUCCIONES DE RAZONAMIENTO:
-                    Considerando si la enfermedad ha evolucionado en días (agudo) o meses (crónico), responde en este formato:
+                    Considerando si la enfermedad ha evolucionado en días (agudo) o meses (crónico) y el estado fenológico de la planta, responde:
                     **🔬 ANÁLISIS TÉCNICO (El Fisiólogo):**
                     [Razonamiento conectando clima, tiempo de existencia y velocidad de avance del síntoma]
                     **🚨 DIAGNÓSTICO PRELIMINAR:**
@@ -551,9 +488,6 @@ elif opcion_menu == "Diagnóstico IA":
                         paquete_analisis.append(imagen_pil)
                         
                     respuesta = model.generate_content(paquete_analisis)
-                    
-                    # 3. IA DIRECTOR (Juez) -> Futura integración Claude 3.5 Sonnet
-                    # receta_final_auditada = llamar_api_claude(informe_patologo, respuesta.text, area_calculada)
                     
                     st.success(f"✅ Diagnóstico Fisiológico Completado para: **{nombre_terreno}**")
                     st.markdown("---")
