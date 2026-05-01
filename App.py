@@ -203,7 +203,6 @@ elif opcion_menu == "Meteorología":
     if json_clima and 'hourly' in json_clima:
         cur = json_clima['current_weather']
         st.markdown(f"**Condiciones en superficie:** Viento hacia el **{grados_a_direccion(cur['winddirection'])}** a {cur['windspeed']} km/h")
-        
         c1, c2, c3, c4 = st.columns(4)
         with c1: st.metric("🌡️ Temperatura", f"{cur['temperature']}°C")
         with c2: st.metric("💧 Humedad Relativa", f"{json_clima['hourly']['relativehumidity_2m'][0]}%")
@@ -218,27 +217,17 @@ elif opcion_menu == "Meteorología":
         
         st.markdown("<br>", unsafe_allow_html=True)
         fig_et0 = go.Figure()
-        fig_et0.add_trace(go.Scatter(
-            x=df_hourly['Fecha_Hora'], y=df_hourly['Evapotranspiración (mm)'], fill='tozeroy', mode='lines',
-            line=dict(color='#FF5722', width=3), fillcolor='rgba(255, 87, 34, 0.3)', name='ET0'
-        ))
+        fig_et0.add_trace(go.Scatter(x=df_hourly['Fecha_Hora'], y=df_hourly['Evapotranspiración (mm)'], fill='tozeroy', mode='lines', line=dict(color='#FF5722', width=3), fillcolor='rgba(255, 87, 34, 0.3)', name='ET0'))
         fig_et0.update_layout(title="Demanda Hídrica y Estrés Atmosférico (Evapotranspiración FAO)", template="plotly_dark", xaxis_title="", yaxis_title="Evapotranspiración (mm)", margin=dict(l=0, r=0, t=40, b=0))
         st.plotly_chart(fig_et0, width="stretch", config={'displaylogo': False, 'locale': 'es'})
-        st.markdown("<div class='metric-caption'>Este gráfico de área ilustra la cantidad de agua que pierde su cultivo por hora. <b>Picos altos indican un estrés hídrico severo</b> inducido por el ambiente, alertando la necesidad de riego.</div><br>", unsafe_allow_html=True)
-
-        fig_precip = px.bar(
-            df_hourly, x='Fecha_Hora', y='Prob_Lluvia (%)', color='Prob_Lluvia (%)',
-            color_continuous_scale=['#E1F5FE', '#0D47A1'], title="Certidumbre y Probabilidad de Precipitación (%)", template="plotly_dark"
-        )
+        
+        fig_precip = px.bar(df_hourly, x='Fecha_Hora', y='Prob_Lluvia (%)', color='Prob_Lluvia (%)', color_continuous_scale=['#E1F5FE', '#0D47A1'], title="Certidumbre y Probabilidad de Precipitación (%)", template="plotly_dark")
         fig_precip.update_layout(xaxis_title="", margin=dict(l=0, r=0, t=40, b=0))
         st.plotly_chart(fig_precip, width="stretch", config={'displaylogo': False, 'locale': 'es'})
-        st.markdown("<div class='metric-caption'>Las barras muestran la certeza de que llueva. <b>Colores más oscuros y barras más altas indican una probabilidad casi absoluta</b>. Herramienta vital para evitar que la lluvia lave sus agroquímicos recién aplicados.</div>", unsafe_allow_html=True)
 
 elif opcion_menu == "Suelo":
     st.subheader(f"🌍 Perfil Físico del Suelo (ERA5-Land: Copernicus)")
-    st.info("Modelo Termodinámico e Hidrológico Asimilado. Representa el volumen de agua pura contenida en la matriz del suelo y su temperatura.")
     datos_suelo = obtener_datos_suelo_copernicus(st.session_state.lat, st.session_state.lon)
-    
     if datos_suelo:
         ts = datos_suelo.get('timestamp_extraido')
         if ts:
@@ -259,38 +248,27 @@ elif opcion_menu == "Suelo":
         ct2.metric("7 - 28 cm", f"{datos_suelo.get('soil_temperature_7_to_28cm')} °C" if datos_suelo.get('soil_temperature_7_to_28cm') is not None else "N/D")
         ct3.metric("28 - 100 cm", f"{datos_suelo.get('soil_temperature_28_to_100cm')} °C" if datos_suelo.get('soil_temperature_28_to_100cm') is not None else "N/D")
         ct4.metric("100 - 289 cm", f"{datos_suelo.get('soil_temperature_100_to_255cm')} °C" if datos_suelo.get('soil_temperature_100_to_255cm') is not None else "N/D")
-    else:
-        st.error("❌ Error de comunicación con los servidores satelitales. Asegúrese de ingresar coordenadas válidas continentales.")
+    else: st.error("❌ Error satelital.")
 
 elif opcion_menu == "Estado de la Planta":
     st.subheader("⚡ Potencial de Crecimiento y Estado Termo-Hídrico")
-    st.info("Algoritmo de Integración Espacial: Cruza la energía solar acumulada (NASA) con las reservas de agua subterránea (Copernicus) para detectar estrés vegetativo invisible.")
-    
     with st.spinner("Analizando matrices satelitales conjuntas (NASA POWER + Copernicus)..."):
         res_sinergia = evaluar_potencial_crecimiento(st.session_state.lat, st.session_state.lon)
-        
     if res_sinergia:
         st.markdown(f"### Diagnóstico del Lote: {res_sinergia['estado']}")
         st.write(f"**Análisis:** {res_sinergia['mensaje']}")
         st.markdown("---")
         c1, c2, c3 = st.columns(3)
-        with c1:
-            st.metric("☀️ Energía PAR (NASA)", f"{res_sinergia['radiacion']} MJ/m²/día")
-            st.markdown('<div class="metric-caption">Promedio de Radiación Solar (últimos 7 días)</div>', unsafe_allow_html=True)
-        with c2:
-            st.metric("💧 Reserva Profunda", f"{res_sinergia['humedad']} m³/m³")
-            st.markdown('<div class="metric-caption">Humedad en zona radicular profunda (28-100 cm) extraída de Copernicus</div>', unsafe_allow_html=True)
-        with c3:
-            st.metric("🌧️ Lluvia Acumulada", f"{res_sinergia['lluvia']} mm")
-            st.markdown('<div class="metric-caption">Precipitación total acumulada en la última semana procesada por la NASA</div>', unsafe_allow_html=True)
-    else:
-        st.error("❌ Error de comunicación con los servidores espaciales. Verifique las coordenadas.")
+        c1.metric("☀️ Energía PAR", f"{res_sinergia['radiacion']} MJ/m²/día")
+        c2.metric("💧 Reserva Profunda", f"{res_sinergia['humedad']} m³/m³")
+        c3.metric("🌧️ Lluvia Acumulada", f"{res_sinergia['lluvia']} mm")
+    else: st.error("❌ Error espacial.")
 
 elif opcion_menu == "Satélite":
     st.subheader(f"🛰️ Análisis Satelital de Salud Vegetal (NDVI)")
     if not gee_activo: st.error("⚠️ Error: Google Earth Engine no está inicializado.")
     else:
-        with st.spinner("Procesando mosaico satelital libre de nubes..."):
+        with st.spinner("Procesando mosaico satelital..."):
             try:
                 punto = ee.Geometry.Point([st.session_state.lon, st.session_state.lat])
                 fecha_fin = datetime.today()
@@ -298,15 +276,12 @@ elif opcion_menu == "Satélite":
                 def enmascarar_nubes(imagen):
                     qa = imagen.select('QA60') 
                     return imagen.updateMask(qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0)))
-                
                 coleccion = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED").filterBounds(punto).filterDate(fecha_inicio.strftime('%Y-%m-%d'), fecha_fin.strftime('%Y-%m-%d')).map(enmascarar_nubes) 
                 
-                if coleccion.size().getInfo() == 0: st.warning("☁️ Cobertura nubosa total y permanente en este trimestre.")
+                if coleccion.size().getInfo() == 0: st.warning("☁️ Cobertura nubosa total y permanente.")
                 else:
-                    st.info("🧩 **Mosaico Satelital:** Fusión matemática de los píxeles despejados en los últimos 90 días.")
                     ndvi = coleccion.median().normalizedDifference(['B8', 'B4']).rename('NDVI')
                     map_id_dict = ee.Image(ndvi).getMapId({'min': 0.1, 'max': 0.6, 'palette': ['#d73027', '#f46d43', '#fdae61', '#fee08b', '#d9ef8b', '#a6d96a', '#66bd63', '#1a9850']})
-                    
                     m_ndvi = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=15, max_zoom=20)
                     folium.TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base').add_to(m_ndvi)
                     folium.TileLayer(tiles=map_id_dict['tile_fetcher'].url_format, attr='Google Earth Engine', overlay=True, opacity=0.7).add_to(m_ndvi)
@@ -314,15 +289,13 @@ elif opcion_menu == "Satélite":
                     st_folium(m_ndvi, width="100%", height=450, key="mapa_ndvi")
             except Exception as e: st.error(f"❌ Error satelital: {e}")
 
-# --- SECCIÓN DIAGNÓSTICO IA MEJORADA (Categorías y Tiempo Compuesto) ---
+# --- SECCIÓN DIAGNÓSTICO IA MEJORADA (Comité Multi-Agente) ---
 elif opcion_menu == "Diagnóstico IA":
     st.subheader("🤖 Diagnóstico Fitosanitario y Dosificación (Múltiples IA)")
     st.warning("**⚠️ Aviso Legal:** Sistema operado por Comité Agéntico. Verifique con un agrónomo.")
     
-    # 1. PERFIL DEL LOTE (NUEVA CLASIFICACIÓN DE CULTIVOS)
+    # 1. PERFIL DEL LOTE
     st.markdown("### 1. Perfil del Lote")
-    
-    # Diccionario de categorías y cultivos
     cultivos_dict = {
         "🌾 Granos y Cereales (Ciclo Corto)": ["Arroz", "Maíz Suave", "Maíz Duro", "Soya", "Trigo", "Avena"],
         "🍫 Perennes / Exportación (Larga Duración)": ["Cacao", "Banano", "Plátano", "Café", "Palma Aceitera", "Mango"],
@@ -332,32 +305,23 @@ elif opcion_menu == "Diagnóstico IA":
     }
     
     c_cat, c_cultivo = st.columns(2)
-    with c_cat:
-        categoria_seleccionada = st.selectbox("Categoría de Cultivo:", list(cultivos_dict.keys()))
+    with c_cat: categoria_seleccionada = st.selectbox("Categoría de Cultivo:", list(cultivos_dict.keys()))
     with c_cultivo:
         cultivo_seleccionado = st.selectbox("Especifique el Cultivo:", cultivos_dict[categoria_seleccionada])
         if cultivo_seleccionado == "Otro": cultivo_seleccionado = st.text_input("Ingrese el nombre del cultivo:")
 
-    # LÓGICA DE TIEMPO DINÁMICA (COMPUESTA)
     st.markdown("#### Cronología del Cultivo")
     es_perenne = categoria_seleccionada == "🍫 Perennes / Exportación (Larga Duración)"
-    
     if es_perenne:
-        st.info("🌳 Para cultivos perennes, indique la edad total de la planta y la fecha de la última intervención (poda/cosecha).")
         col_ed1, col_ed2, col_ed3 = st.columns(3)
-        with col_ed1:
-            edad_anios = st.number_input("Años:", min_value=0, value=3)
-        with col_ed2:
-            edad_meses = st.number_input("Meses:", min_value=0, max_value=11, value=0)
-        with col_ed3:
-            fecha_ultima_cosecha = st.date_input("Última Cosecha / Poda:", value=datetime.today() - timedelta(days=30))
-        
-        tiempo_planta_str = f"Planta adulta de {edad_anios} años y {edad_meses} meses. Última cosecha/poda hace {(datetime.today().date() - fecha_ultima_cosecha).days} días."
+        with col_ed1: edad_anios = st.number_input("Años:", min_value=0, value=3)
+        with col_ed2: edad_meses = st.number_input("Meses:", min_value=0, max_value=11, value=0)
+        with col_ed3: fecha_ultima_cosecha = st.date_input("Última Cosecha / Poda:", value=datetime.today() - timedelta(days=30))
+        tiempo_planta_str = f"Planta de {edad_anios} años y {edad_meses} meses. Última poda/cosecha hace {(datetime.today().date() - fecha_ultima_cosecha).days} días."
     else:
-        st.info("🌱 Para cultivos de ciclo corto, indique la fecha exacta de siembra.")
         fecha_siembra = st.date_input("Fecha de Siembra:", value=datetime.today() - timedelta(days=45))
         dias_desde_siembra = (datetime.today().date() - fecha_siembra).days
-        tiempo_planta_str = f"Cultivo de ciclo corto con {dias_desde_siembra} días desde la siembra."
+        tiempo_planta_str = f"Ciclo corto. {dias_desde_siembra} días desde la siembra."
 
     st.markdown("---")
 
@@ -368,11 +332,9 @@ elif opcion_menu == "Diagnóstico IA":
     with c_btn_gps:
         ubicacion_gps = streamlit_geolocation()
         if ubicacion_gps['latitude'] is not None and ubicacion_gps['longitude'] is not None:
-            lat_obtenida = round(ubicacion_gps['latitude'], 4)
-            lon_obtenida = round(ubicacion_gps['longitude'], 4)
-            if lat_obtenida != st.session_state.lat or lon_obtenida != st.session_state.lon:
-                st.session_state.lat = lat_obtenida
-                st.session_state.lon = lon_obtenida
+            lat_ob, lon_ob = round(ubicacion_gps['latitude'], 4), round(ubicacion_gps['longitude'], 4)
+            if lat_ob != st.session_state.lat or lon_ob != st.session_state.lon:
+                st.session_state.lat, st.session_state.lon = lat_ob, lon_ob
                 st.rerun()
 
     c_btn_marcar, c_btn_deshacer, c_btn_cerrar = st.columns(3)
@@ -385,11 +347,10 @@ elif opcion_menu == "Diagnóstico IA":
             st.session_state.temp_coords = puntos_mapeo
             st.rerun()
     with c_btn_deshacer:
-        if st.button("↩️ Deshacer Punto"):
-            if puntos_mapeo:
-                puntos_mapeo.pop()
-                st.session_state.temp_coords = puntos_mapeo
-                st.rerun()
+        if st.button("↩️ Deshacer Punto") and puntos_mapeo:
+            puntos_mapeo.pop()
+            st.session_state.temp_coords = puntos_mapeo
+            st.rerun()
     with c_btn_cerrar:
         if len(puntos_mapeo) >= 3:
             if st.button("✅ Cerrar Polígono"):
@@ -410,7 +371,6 @@ elif opcion_menu == "Diagnóstico IA":
                 poligono_cerrado = True
             else:
                 folium.PolyLine(locations=coordenadas_linea, color="#2196F3", weight=3, dash_array='5, 5').add_to(m_diag)
-    
     st_folium(m_diag, width="100%", height=450, key="mapa_diag_puntos", returned_objects=[])
     
     area_calculada = 0.0
@@ -420,30 +380,35 @@ elif opcion_menu == "Diagnóstico IA":
 
     st.markdown("---")
 
-    # 3. REPORTE FITOSANITARIO
+    # 3. REPORTE FITOSANITARIO (CON NUEVAS VARIABLES DE RIGOR)
     st.markdown("### 3. Reporte de Síntomas")
     
     elevacion_actual = obtener_elevacion(st.session_state.lat, st.session_state.lon)
     clima_actual = obtener_datos_clima(st.session_state.lat, st.session_state.lon)
     clima_texto = "No disponible"
     if clima_actual and 'current_weather' in clima_actual:
-        clima_texto = f"{clima_actual['current_weather']['temperature']}°C, Humedad {clima_actual['hourly']['relativehumidity_2m'][0]}%"
+        cur_w = clima_actual['current_weather']
+        clima_texto = f"Temp: {cur_w['temperature']}°C, Humedad: {clima_actual['hourly']['relativehumidity_2m'][0]}%, Viento: {cur_w['windspeed']} km/h, Presión: {clima_actual['hourly']['pressure_msl'][0]} hPa"
     
     c_sint1, c_sint2 = st.columns(2)
     with c_sint1:
         nombre_lote_form = st.text_input("Asigne un nombre a este Lote:", value=st.session_state.nombre_lote_global, placeholder="Ej: Lote de la Loma")
         if nombre_lote_form: st.session_state.nombre_lote_global = nombre_lote_form
         
-        parte_afectada = st.selectbox("🍂 Órgano visiblemente afectado:", ["Hojas", "Tallo o Tronco", "Fruto o Espiga", "Raíz", "Toda la planta"])
+        parte_afectada = st.selectbox("🍂 Órgano afectado:", ["Hojas", "Tallo o Tronco", "Fruto o Espiga", "Raíz", "Toda la planta"])
         
-        # TIEMPO CON SÍNTOMAS (Compuesto para mayor precisión)
+        # NUEVAS VARIABLES INTEGRADAS AL UI
+        umbral_afectacion = st.selectbox("📊 Porcentaje del cultivo afectado (Umbral visual):", ["Menos del 10% (Foco aislado)", "Del 10% al 50%", "Más del 50% (Ataque masivo)"])
+        heridas_previas = st.radio("✂️ ¿Realizó podas, cortes recientes o hubo granizo?", ["No", "Sí (Posibles heridas de entrada)"], horizontal=True)
+        presencia_insectos = st.radio("🪲 ¿Ha notado insectos (ej. pulgones, mosca blanca) cerca del daño?", ["No", "Sí (Posibles vectores)"], horizontal=True)
+        
+    with c_sint2:
         st.markdown("<span class='time-label'>⏱️ Tiempo exacto de evolución del síntoma:</span>", unsafe_allow_html=True)
         col_sin1, col_sin2 = st.columns(2)
         with col_sin1: sint_num = st.number_input("Cantidad", min_value=1, value=5, label_visibility="collapsed")
         with col_sin2: sint_uni = st.selectbox("Unidad", ["Días", "Semanas", "Meses"], label_visibility="collapsed")
         tiempo_sintomas_str = f"{sint_num} {sint_uni}"
         
-    with c_sint2:
         tipo_riego = st.selectbox("💧 Tipo de Riego:", ["Secano", "Goteo", "Aspersión", "Gravedad", "Río"])
         sintomas_texto = st.text_area("✍️ Describa el problema detalladamente:")
         foto_planta = st.file_uploader("📸 Subir foto clara del problema:", type=['jpg', 'jpeg', 'png'])
@@ -454,8 +419,9 @@ elif opcion_menu == "Diagnóstico IA":
         elif not poligono_cerrado: st.warning("⚠️ Por favor, delimite primero el perímetro de su lote en el mapa (Paso 2).")
         elif len(sintomas_texto) < 5 and not foto_planta: st.warning("⚠️ Describa el problema o suba una foto.")
         else:
-            with st.spinner("🧠 Inicializando flujo multi-agente. El Fisiólogo (Gemini) está analizando la fenología y clima..."):
+            with st.spinner("🧠 Inicializando flujo multi-agente..."):
                 try:
+                    # SIMULACIÓN DE ARQUITECTURA MULTI-AGENTE (Ejecutada por Gemini como Fisiólogo Integrador)
                     model = genai.GenerativeModel('gemini-1.5-flash')
                     nombre_terreno = st.session_state.nombre_lote_global if st.session_state.nombre_lote_global else "Lote sin nombre"
                     
@@ -464,23 +430,27 @@ elif opcion_menu == "Diagnóstico IA":
                     
                     CONTEXTO ESPACIAL Y FENOLÓGICO:
                     - Área de la plantación: {area_calculada:.2f} Hectáreas.
-                    - Estado del Cultivo: {tiempo_planta_str}
+                    - Estado del Cultivo: {cultivo_seleccionado} ({tiempo_planta_str}).
                     - Altitud: {elevacion_actual} m.s.n.m.
-                    - Clima reciente: {clima_texto}
+                    - Clima y Entorno: {clima_texto}.
+                    - Heridas recientes (Puertas de entrada): {heridas_previas}.
                     
-                    SÍNTOMAS (CRONOLOGÍA EXACTA):
-                    - Órgano afectado: {parte_afectada}
-                    - Tiempo exacto de evolución del síntoma: {tiempo_sintomas_str}
-                    - Descripción: {sintomas_texto}
+                    SÍNTOMAS REPORTADOS:
+                    - Órgano afectado: {parte_afectada}.
+                    - Tiempo de evolución: {tiempo_sintomas_str}.
+                    - Umbral de afectación: {umbral_afectacion}.
+                    - Posibles vectores: {presencia_insectos}.
+                    - Descripción del usuario: {sintomas_texto}.
                     
                     INSTRUCCIONES DE RAZONAMIENTO:
-                    Considerando si la enfermedad ha evolucionado en días (agudo) o meses (crónico) y el estado fenológico de la planta, responde:
-                    **🔬 ANÁLISIS TÉCNICO (El Fisiólogo):**
-                    [Razonamiento conectando clima, tiempo de existencia y velocidad de avance del síntoma]
+                    1. Analiza la correlación estrés-plaga: Usa los datos del clima y las heridas para determinar si el ambiente favorece la infección (Triángulo de la Enfermedad).
+                    2. Responde en este formato:
+                    **🔬 ANÁLISIS DEL FISIÓLOGO:**
+                    [Razonamiento conectando clima, heridas, tiempo de evolución y presencia de vectores]
                     **🚨 DIAGNÓSTICO PRELIMINAR:**
-                    [2-3 causas probables]
-                    **📋 RECETA AGRONÓMICA (Dosis exacta requerida):**
-                    Calcula la dosis total de producto químico/orgánico que se debe mezclar para fumigar las {area_calculada:.2f} Hectáreas de este lote.
+                    [Causas probables]
+                    **📋 RECETA Y ACCIÓN (Considerando el umbral):**
+                    [Calcula la dosis de mezcla (Producto + Agua) para {area_calculada:.2f} Hectáreas. Si el umbral es bajo (<10%), prioriza control biológico o cultural.]
                     """
                     paquete_analisis = [prompt_experto]
                     if foto_planta is not None:
@@ -488,8 +458,7 @@ elif opcion_menu == "Diagnóstico IA":
                         paquete_analisis.append(imagen_pil)
                         
                     respuesta = model.generate_content(paquete_analisis)
-                    
-                    st.success(f"✅ Diagnóstico Fisiológico Completado para: **{nombre_terreno}**")
+                    st.success(f"✅ Diagnóstico Multi-Agente Completado para: **{nombre_terreno}**")
                     st.markdown("---")
                     st.write(respuesta.text)
                 except Exception as e:
