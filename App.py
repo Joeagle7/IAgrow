@@ -408,39 +408,51 @@ elif opcion_menu == "Diagnóstico IA":
         with col_sin2: sint_uni = st.selectbox("Unidad", ["Días", "Semanas", "Meses"], label_visibility="collapsed")
         tiempo_sintomas_str = f"{sint_num} {sint_uni}"
         
-        tipo_riego = st.selectbox("💧 Tipo de Riego:", ["Secano", "Goteo", "Aspersión", "Gravedad", "Río"])
+tipo_riego = st.selectbox("💧 Tipo de Riego:", ["Secano", "Goteo", "Aspersión", "Gravedad", "Río"])
         sintomas_texto = st.text_area("✍️ Describa el problema detalladamente:")
-        foto_planta = st.file_uploader("📸 Subir foto clara del problema:", type=['jpg', 'jpeg', 'png'])
-        if foto_planta is not None: st.image(foto_planta, use_container_width=True)
+        
+        # EL SECRETO ESTÁ AQUÍ: accept_multiple_files=True
+        fotos_planta = st.file_uploader("📸 Subir fotos del problema (Se recomiendan 2 a 4 fotos):", type=['jpg', 'jpeg', 'png'], accept_multiple_files=True)
+        
+        # Crear una mini-galería para mostrar las fotos subidas
+        if fotos_planta:
+            st.markdown("<span class='time-label'>Evidencia fotográfica cargada:</span>", unsafe_allow_html=True)
+            # Creamos hasta 3 columnas para que se vea ordenado
+            cols = st.columns(min(len(fotos_planta), 3) if len(fotos_planta) > 0 else 1)
+            for i, foto in enumerate(fotos_planta):
+                cols[i % 3].image(foto, use_container_width=True)
 
-    # EJECUCIÓN DEL COMITÉ (100% GEMINI)
+# EJECUCIÓN DEL COMITÉ (100% GEMINI)
     if st.button("🧠 Ejecutar Comité de IA", use_container_width=True):
         if not gemini_activo: st.error("⚠️ La API de Gemini no está configurada.")
         elif not poligono_cerrado: st.warning("⚠️ Por favor, delimite primero el perímetro de su lote en el mapa (Paso 2).")
-        elif len(sintomas_texto) < 5 and not foto_planta: st.warning("⚠️ Describa el problema o suba una foto.")
+        elif len(sintomas_texto) < 5 and not fotos_planta: st.warning("⚠️ Describa el problema o suba fotos.")
         else:
             nombre_terreno = st.session_state.nombre_lote_global if st.session_state.nombre_lote_global else "Lote sin nombre"
             model_flash = genai.GenerativeModel('gemini-1.5-flash')
             
             with st.status("🧠 Inicializando Comité de IA...", expanded=True) as status:
                 try:
-                    # AGENTE 1: EL PATÓLOGO (VISIÓN)
-                    st.write("🔍 **Agente 1 (Patólogo):** Analizando morfología y vectores...")
+                    # AGENTE 1: EL PATÓLOGO (VISIÓN MULTIMODAL)
+                    st.write("🔍 **Agente 1 (Patólogo):** Escaneando banco fotográfico completo...")
                     prompt_patologo = f"""
-                    Eres el 'Patólogo Principal'. Tu trabajo es analizar la imagen y la descripción para identificar la morfología del daño.
+                    Eres el 'Patólogo Principal'. Tu trabajo es analizar la serie de imágenes y la descripción para identificar la morfología del daño de forma integral.
                     Cultivo: {cultivo_seleccionado}. Órgano: {parte_afectada}.
                     Descripción del agricultor: {sintomas_texto}. Presencia de insectos reportada: {presencia_insectos}.
                     REGLAS ESTRICTAS:
                     1. Si observas necrosis, especifica si es 'seca' (fitotoxicidad/nutrientes) o 'acuosa' (bacterias/hongos).
-                    2. Busca vectores: Evalúa indicios de daño mecánico por insectos picadores-chupadores.
+                    2. Busca vectores: Evalúa indicios de daño mecánico por insectos picadores-chupadores en TODAS las fotos aportadas.
                     3. Evalúa el desarrollo vegetativo general (enanismo, clorosis asimétrica).
                     4. PROHIBIDO RECETAR QUÍMICOS O DAR SOLUCIONES.
-                    Entrega un reporte técnico puramente descriptivo de lo que ves.
+                    Entrega un reporte técnico puramente descriptivo analizando la evidencia fotográfica en su conjunto.
                     """
+                    
                     paquete_patologo = [prompt_patologo]
-                    if foto_planta is not None:
-                        imagen_pil = Image.open(foto_planta)
-                        paquete_patologo.append(imagen_pil)
+                    # BUCLE: Abre cada imagen subida y la inyecta al "cerebro" de la IA
+                    if fotos_planta:
+                        for foto in fotos_planta:
+                            imagen_pil = Image.open(foto)
+                            paquete_patologo.append(imagen_pil)
                     
                     res_patologo = model_flash.generate_content(paquete_patologo).text
                     
