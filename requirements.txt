@@ -12,3 +12,5 @@ statsmodels
 beautifulsoup4
 lxml
 openpyxl
+supabase 
+sentence-transformers
