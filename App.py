@@ -41,6 +41,7 @@ def inicializar_google_earth_engine():
 
 gee_activo = inicializar_google_earth_engine()
 
+# Inicialización ÚNICA de Gemini para todos los agentes
 try:
     if "GEMINI_API_KEY" in st.secrets:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
@@ -289,10 +290,10 @@ elif opcion_menu == "Satélite":
                     st_folium(m_ndvi, width="100%", height=450, key="mapa_ndvi")
             except Exception as e: st.error(f"❌ Error satelital: {e}")
 
-# --- SECCIÓN DIAGNÓSTICO IA MEJORADA (Comité Multi-Agente) ---
+# --- SECCIÓN DIAGNÓSTICO IA (COMITÉ 100% GEMINI) ---
 elif opcion_menu == "Diagnóstico IA":
-    st.subheader("🤖 Diagnóstico Fitosanitario y Dosificación (Múltiples IA)")
-    st.warning("**⚠️ Aviso Legal:** Sistema operado por Comité Agéntico. Verifique con un agrónomo.")
+    st.subheader("🤖 Diagnóstico Fitosanitario y Dosificación (Comité de IA)")
+    st.warning("**⚠️ Aviso Legal:** Sistema operado por Comité de Inteligencia Artificial. Verifique con un agrónomo.")
     
     # 1. PERFIL DEL LOTE
     st.markdown("### 1. Perfil del Lote")
@@ -380,7 +381,7 @@ elif opcion_menu == "Diagnóstico IA":
 
     st.markdown("---")
 
-    # 3. REPORTE FITOSANITARIO (CON NUEVAS VARIABLES DE RIGOR)
+    # 3. REPORTE FITOSANITARIO
     st.markdown("### 3. Reporte de Síntomas")
     
     elevacion_actual = obtener_elevacion(st.session_state.lat, st.session_state.lon)
@@ -396,8 +397,6 @@ elif opcion_menu == "Diagnóstico IA":
         if nombre_lote_form: st.session_state.nombre_lote_global = nombre_lote_form
         
         parte_afectada = st.selectbox("🍂 Órgano afectado:", ["Hojas", "Tallo o Tronco", "Fruto o Espiga", "Raíz", "Toda la planta"])
-        
-        # NUEVAS VARIABLES INTEGRADAS AL UI
         umbral_afectacion = st.selectbox("📊 Porcentaje del cultivo afectado (Umbral visual):", ["Menos del 10% (Foco aislado)", "Del 10% al 50%", "Más del 50% (Ataque masivo)"])
         heridas_previas = st.radio("✂️ ¿Realizó podas, cortes recientes o hubo granizo?", ["No", "Sí (Posibles heridas de entrada)"], horizontal=True)
         presencia_insectos = st.radio("🪲 ¿Ha notado insectos (ej. pulgones, mosca blanca) cerca del daño?", ["No", "Sí (Posibles vectores)"], horizontal=True)
@@ -414,52 +413,83 @@ elif opcion_menu == "Diagnóstico IA":
         foto_planta = st.file_uploader("📸 Subir foto clara del problema:", type=['jpg', 'jpeg', 'png'])
         if foto_planta is not None: st.image(foto_planta, use_container_width=True)
 
-    if st.button("🧠 Ejecutar Comité de IA (Diagnóstico Multi-Agente)"):
+    # EJECUCIÓN DEL COMITÉ (100% GEMINI)
+    if st.button("🧠 Ejecutar Comité de IA", use_container_width=True):
         if not gemini_activo: st.error("⚠️ La API de Gemini no está configurada.")
         elif not poligono_cerrado: st.warning("⚠️ Por favor, delimite primero el perímetro de su lote en el mapa (Paso 2).")
         elif len(sintomas_texto) < 5 and not foto_planta: st.warning("⚠️ Describa el problema o suba una foto.")
         else:
-            with st.spinner("🧠 Inicializando flujo multi-agente..."):
+            nombre_terreno = st.session_state.nombre_lote_global if st.session_state.nombre_lote_global else "Lote sin nombre"
+            model_flash = genai.GenerativeModel('gemini-1.5-flash')
+            
+            with st.status("🧠 Inicializando Comité de IA...", expanded=True) as status:
                 try:
-                    # SIMULACIÓN DE ARQUITECTURA MULTI-AGENTE (Ejecutada por Gemini como Fisiólogo Integrador)
-                    model = genai.GenerativeModel('gemini-1.5-flash')
-                    nombre_terreno = st.session_state.nombre_lote_global if st.session_state.nombre_lote_global else "Lote sin nombre"
-                    
-                    prompt_experto = f"""
-                    Eres el 'Fisiólogo', un sistema experto en epidemiología y agronomía tropical.
-                    
-                    CONTEXTO ESPACIAL Y FENOLÓGICO:
-                    - Área de la plantación: {area_calculada:.2f} Hectáreas.
-                    - Estado del Cultivo: {cultivo_seleccionado} ({tiempo_planta_str}).
-                    - Altitud: {elevacion_actual} m.s.n.m.
-                    - Clima y Entorno: {clima_texto}.
-                    - Heridas recientes (Puertas de entrada): {heridas_previas}.
-                    
-                    SÍNTOMAS REPORTADOS:
-                    - Órgano afectado: {parte_afectada}.
-                    - Tiempo de evolución: {tiempo_sintomas_str}.
-                    - Umbral de afectación: {umbral_afectacion}.
-                    - Posibles vectores: {presencia_insectos}.
-                    - Descripción del usuario: {sintomas_texto}.
-                    
-                    INSTRUCCIONES DE RAZONAMIENTO:
-                    1. Analiza la correlación estrés-plaga: Usa los datos del clima y las heridas para determinar si el ambiente favorece la infección (Triángulo de la Enfermedad).
-                    2. Responde en este formato:
-                    **🔬 ANÁLISIS DEL FISIÓLOGO:**
-                    [Razonamiento conectando clima, heridas, tiempo de evolución y presencia de vectores]
-                    **🚨 DIAGNÓSTICO PRELIMINAR:**
-                    [Causas probables]
-                    **📋 RECETA Y ACCIÓN (Considerando el umbral):**
-                    [Calcula la dosis de mezcla (Producto + Agua) para {area_calculada:.2f} Hectáreas. Si el umbral es bajo (<10%), prioriza control biológico o cultural.]
+                    # AGENTE 1: EL PATÓLOGO (VISIÓN)
+                    st.write("🔍 **Agente 1 (Patólogo):** Analizando morfología y vectores...")
+                    prompt_patologo = f"""
+                    Eres el 'Patólogo Principal'. Tu trabajo es analizar la imagen y la descripción para identificar la morfología del daño.
+                    Cultivo: {cultivo_seleccionado}. Órgano: {parte_afectada}.
+                    Descripción del agricultor: {sintomas_texto}. Presencia de insectos reportada: {presencia_insectos}.
+                    REGLAS ESTRICTAS:
+                    1. Si observas necrosis, especifica si es 'seca' (fitotoxicidad/nutrientes) o 'acuosa' (bacterias/hongos).
+                    2. Busca vectores: Evalúa indicios de daño mecánico por insectos picadores-chupadores.
+                    3. Evalúa el desarrollo vegetativo general (enanismo, clorosis asimétrica).
+                    4. PROHIBIDO RECETAR QUÍMICOS O DAR SOLUCIONES.
+                    Entrega un reporte técnico puramente descriptivo de lo que ves.
                     """
-                    paquete_analisis = [prompt_experto]
+                    paquete_patologo = [prompt_patologo]
                     if foto_planta is not None:
                         imagen_pil = Image.open(foto_planta)
-                        paquete_analisis.append(imagen_pil)
+                        paquete_patologo.append(imagen_pil)
+                    
+                    res_patologo = model_flash.generate_content(paquete_patologo).text
+                    
+                    # AGENTE 2: EL FISIÓLOGO (CONTEXTO)
+                    st.write("🌦️ **Agente 2 (Fisiólogo):** Correlacionando epidemiología y clima...")
+                    prompt_fisiologo = f"""
+                    Eres el 'Fisiólogo Epidemiólogo'. 
+                    Cultivo: {cultivo_seleccionado} ({tiempo_planta_str}). Altitud: {elevacion_actual} msnm.
+                    Clima reciente: {clima_texto}. Heridas recientes: {heridas_previas}. Tiempo con síntomas: {tiempo_sintomas_str}.
+                    REPORTE VISUAL DEL PATÓLOGO: {res_patologo}
+                    REGLAS ESTRICTAS:
+                    1. Triángulo de la Enfermedad: Analiza la interacción entre planta, patógeno y clima.
+                    2. Correlación Estrés-Plaga: Evalúa si el estrés térmico o hídrico propició el ataque.
+                    3. Cronología: Contrasta el tiempo de evolución con la edad de la planta.
+                    Redacta un 'Dictamen Fisiológico' determinando la probabilidad biológica de la enfermedad y menciona las 2 causas más probables.
+                    """
+                    res_fisiologo = model_flash.generate_content(prompt_fisiologo).text
+                    
+                    # AGENTE 3: EL DIRECTOR DE SANIDAD (PRESCRIPTOR FINAL)
+                    st.write("📋 **Agente 3 (Director de Sanidad):** Calculando dosis y evaluando riesgos...")
+                    prompt_director = f"""
+                    Eres el 'Director de Sanidad Vegetal', máxima autoridad lógica del sistema.
+                    Área exacta del lote: {area_calculada:.2f} Hectáreas. Cultivo: {cultivo_seleccionado}. Umbral de afectación: {umbral_afectacion}.
+                    REPORTE DEL PATÓLOGO: {res_patologo}
+                    DICTAMEN DEL FISIÓLOGO: {res_fisiologo}
+                    
+                    REGLAS INQUEBRANTABLES DE SEGURIDAD:
+                    1. Regla Anti-Clorosis: Si los reportes indican clorosis/necrosis, PROHIBIDO recomendar fertilizantes nitrogenados como primera línea.
+                    2. Umbral de Acción: Si el umbral es 'Menos del 10%', receta exclusivamente control biológico o cultural. Solo receta químicos si el umbral lo amerita.
+                    3. Cálculo de Caudal: Si autorizas un producto, CALCULA LA DOSIS EXACTA TOTAL para las {area_calculada:.2f} Hectáreas. (Ej: Producto + Agua).
+                    
+                    Entrega la RECETA AGRONÓMICA FINAL directamente al agricultor, explicando tu decisión basada en los informes previos y detallando la dosificación paso a paso.
+                    """
+                    res_director = model_flash.generate_content(prompt_director).text
+                    
+                    status.update(label="✅ Consenso alcanzado con éxito", state="complete", expanded=False)
+                    
+                    # Mostrar resultados en la interfaz
+                    st.success(f"### 📋 Receta Oficial para: {nombre_terreno}")
+                    st.write(res_director)
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    with st.expander("🔍 Ver Informes Técnicos Previos (Transparencia del Comité)"):
+                        st.markdown("**Reporte de Morfología (Patólogo):**")
+                        st.write(res_patologo)
+                        st.markdown("---")
+                        st.markdown("**Dictamen de Epidemiología (Fisiólogo):**")
+                        st.write(res_fisiologo)
                         
-                    respuesta = model.generate_content(paquete_analisis)
-                    st.success(f"✅ Diagnóstico Multi-Agente Completado para: **{nombre_terreno}**")
-                    st.markdown("---")
-                    st.write(respuesta.text)
                 except Exception as e:
-                    st.error(f"❌ Error de IA: {e}")
+                    status.update(label="❌ Fallo en el Comité de IA", state="error", expanded=False)
+                    st.error(f"Error de ejecución: {e}")
