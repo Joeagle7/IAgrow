@@ -290,7 +290,7 @@ elif opcion_menu == "Satélite":
                     st_folium(m_ndvi, width="100%", height=450, key="mapa_ndvi")
             except Exception as e: st.error(f"❌ Error satelital: {e}")
 
-# --- SECCIÓN DIAGNÓSTICO IA (COMITÉ 100% GEMINI) ---
+# --- SECCIÓN DIAGNÓSTICO IA (COMITÉ 100% GEMINI CON MÚLTIPLES FOTOS) ---
 elif opcion_menu == "Diagnóstico IA":
     st.subheader("🤖 Diagnóstico Fitosanitario y Dosificación (Comité de IA)")
     st.warning("**⚠️ Aviso Legal:** Sistema operado por Comité de Inteligencia Artificial. Verifique con un agrónomo.")
@@ -381,7 +381,7 @@ elif opcion_menu == "Diagnóstico IA":
 
     st.markdown("---")
 
-    # 3. REPORTE FITOSANITARIO
+    # 3. REPORTE FITOSANITARIO Y FOTOS MULTIPLES
     st.markdown("### 3. Reporte de Síntomas")
     
     elevacion_actual = obtener_elevacion(st.session_state.lat, st.session_state.lon)
@@ -408,21 +408,19 @@ elif opcion_menu == "Diagnóstico IA":
         with col_sin2: sint_uni = st.selectbox("Unidad", ["Días", "Semanas", "Meses"], label_visibility="collapsed")
         tiempo_sintomas_str = f"{sint_num} {sint_uni}"
         
-tipo_riego = st.selectbox("💧 Tipo de Riego:", ["Secano", "Goteo", "Aspersión", "Gravedad", "Río"])
+        tipo_riego = st.selectbox("💧 Tipo de Riego:", ["Secano", "Goteo", "Aspersión", "Gravedad", "Río"])
         sintomas_texto = st.text_area("✍️ Describa el problema detalladamente:")
         
-        # EL SECRETO ESTÁ AQUÍ: accept_multiple_files=True
+        # MÚLTIPLES FOTOS INTEGRADO
         fotos_planta = st.file_uploader("📸 Subir fotos del problema (Se recomiendan 2 a 4 fotos):", type=['jpg', 'jpeg', 'png'], accept_multiple_files=True)
         
-        # Crear una mini-galería para mostrar las fotos subidas
         if fotos_planta:
             st.markdown("<span class='time-label'>Evidencia fotográfica cargada:</span>", unsafe_allow_html=True)
-            # Creamos hasta 3 columnas para que se vea ordenado
             cols = st.columns(min(len(fotos_planta), 3) if len(fotos_planta) > 0 else 1)
             for i, foto in enumerate(fotos_planta):
                 cols[i % 3].image(foto, use_container_width=True)
 
-# EJECUCIÓN DEL COMITÉ (100% GEMINI)
+    # EJECUCIÓN DEL COMITÉ (100% GEMINI MULTIMODAL)
     if st.button("🧠 Ejecutar Comité de IA", use_container_width=True):
         if not gemini_activo: st.error("⚠️ La API de Gemini no está configurada.")
         elif not poligono_cerrado: st.warning("⚠️ Por favor, delimite primero el perímetro de su lote en el mapa (Paso 2).")
@@ -433,7 +431,7 @@ tipo_riego = st.selectbox("💧 Tipo de Riego:", ["Secano", "Goteo", "Aspersión
             
             with st.status("🧠 Inicializando Comité de IA...", expanded=True) as status:
                 try:
-                    # AGENTE 1: EL PATÓLOGO (VISIÓN MULTIMODAL)
+                    # AGENTE 1: EL PATÓLOGO (VISIÓN)
                     st.write("🔍 **Agente 1 (Patólogo):** Escaneando banco fotográfico completo...")
                     prompt_patologo = f"""
                     Eres el 'Patólogo Principal'. Tu trabajo es analizar la serie de imágenes y la descripción para identificar la morfología del daño de forma integral.
@@ -448,7 +446,6 @@ tipo_riego = st.selectbox("💧 Tipo de Riego:", ["Secano", "Goteo", "Aspersión
                     """
                     
                     paquete_patologo = [prompt_patologo]
-                    # BUCLE: Abre cada imagen subida y la inyecta al "cerebro" de la IA
                     if fotos_planta:
                         for foto in fotos_planta:
                             imagen_pil = Image.open(foto)
