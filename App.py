@@ -13,6 +13,8 @@ from PIL import Image
 import io
 import math
 import warnings
+import supabase
+import sentence-transformers
 warnings.filterwarnings('ignore')
 
 # --- 1. CONFIGURACIÓN Y ESTADO DE MEMORIA ---
