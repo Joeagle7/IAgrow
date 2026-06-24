@@ -115,8 +115,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 c_logo, c_menu = st.columns([2, 8])
-    with c_logo: st.markdown("## :green[:material/compost: AgroIA]")
-        with c_menu:
+with c_logo: st.markdown("## :green[:material/compost: AgroIA]")
+with c_menu:
     opciones_menu = [
         ":material/map: Mapa", 
         ":material/air: Meteorología", 
