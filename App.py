@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import folium
+from folium.plugins import Draw
 from streamlit_folium import st_folium
 import requests
 from streamlit_geolocation import streamlit_geolocation
@@ -13,21 +14,19 @@ from PIL import Image
 import io
 import math
 import warnings
-# --- NUEVAS IMPORTACIONES GLOBALES (CORREGIDO) ---
 from supabase import create_client
 from sentence_transformers import SentenceTransformer
 
 warnings.filterwarnings('ignore')
 
 # --- 1. CONFIGURACIÓN Y ESTADO DE MEMORIA ---
-st.set_page_config(page_title="AgroIA", page_icon="🌿", layout="wide")
+st.set_page_config(page_title="AgroIA", page_icon=":material/compost:", layout="wide")
 
 if "lat" not in st.session_state: st.session_state.lat = -2.1962
 if "lon" not in st.session_state: st.session_state.lon = -79.8862
-if "temp_coords" not in st.session_state: st.session_state.temp_coords = []
 if "nombre_lote_global" not in st.session_state: st.session_state.nombre_lote_global = ""
 
-# --- CARGA GLOBAL DE MODELOS Y APIS (CORREGIDO) ---
+# --- CARGA GLOBAL DE MODELOS Y APIS ---
 @st.cache_resource
 def inicializar_google_earth_engine():
     try:
@@ -55,7 +54,6 @@ try:
 except:
     gemini_activo = False
 
-# Conexión Global a Supabase
 try:
     if "SUPABASE_URL" in st.secrets and "SUPABASE_KEY" in st.secrets:
         supabase_url = st.secrets["SUPABASE_URL"]
@@ -67,7 +65,6 @@ try:
 except:
     supabase_activo = False
 
-# Carga Global del Modelo de Vectores para fotos
 @st.cache_resource
 def cargar_modelo_vectorial():
     try:
@@ -77,60 +74,63 @@ def cargar_modelo_vectorial():
 
 modelo_vectores = cargar_modelo_vectorial()
 
-# --- 2. DISEÑO UI/UX CORPORATIVO ---
+# --- 2. DISEÑO UI/UX CORPORATIVO (AgTech Dark Slate) ---
 st.markdown("""
 <style>
-    .stApp { background-color: #000000; color: #ffffff; }
+    .stApp { background-color: #0E1117; color: #E0E0E0; }
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     
     div[role="radiogroup"] {
         display: flex; flex-direction: row; gap: 15px; background-color: transparent;
-        justify-content: flex-start; align-items: center; border-bottom: 2px solid #333333; padding-bottom: 0px;
+        justify-content: flex-start; align-items: center; border-bottom: 2px solid #2D333B; padding-bottom: 0px;
     }
     div[role="radiogroup"] > label {
         background-color: transparent !important; border: none !important; padding: 10px 20px !important;
-        color: #ffffff !important; font-weight: 600 !important; font-size: 16px !important;
-        cursor: pointer; border-radius: 5px 5px 0px 0px !important; border-bottom: 4px solid transparent !important;
+        color: #A0AABF !important; font-weight: 500 !important; font-size: 16px !important;
+        cursor: pointer; border-radius: 5px 5px 0px 0px !important; border-bottom: 3px solid transparent !important;
         transition: all 0.3s ease; margin-bottom: -2px;
     }
     div[role="radiogroup"] > label > div:first-child { display: none; }
-    div[role="radiogroup"] > label:hover { color: #4DB6AC !important; background-color: #1a1a1a !important; }
+    div[role="radiogroup"] > label:hover { color: #00E676 !important; background-color: #1A2027 !important; }
     div[role="radiogroup"] > label:has(input:checked) {
-        background-color: #004D40 !important; color: #ffffff !important;           
-        border-bottom: 4px solid #00E676 !important; font-weight: 700 !important;
+        background-color: #161B22 !important; color: #FFFFFF !important;           
+        border-bottom: 3px solid #00E676 !important; font-weight: 600 !important;
     }
     
     .stMetric { 
-        background: #121212; border-radius: 8px; padding: 15px; 
-        border-left: 5px solid #009688; box-shadow: 0 4px 6px rgba(0,0,0,0.3); color: #ffffff !important;
+        background: #1E2329; border-radius: 8px; padding: 15px; 
+        border-left: 4px solid #00E676; box-shadow: 0 4px 6px rgba(0,0,0,0.2); color: #FFFFFF !important;
     }
-    div[data-testid="stMetricValue"] > div { color: #ffffff !important; }
-    div[data-testid="stMetricLabel"] > div { color: #aaaaaa !important; }
+    div[data-testid="stMetricValue"] > div { color: #FFFFFF !important; font-weight: 600;}
+    div[data-testid="stMetricLabel"] > div { color: #A0AABF !important; }
     
-    .metric-caption { font-size: 0.90rem; color: #bbbbbb; margin-top: 5px; line-height: 1.4; }
-    h1, h2, h3, h4, .stMarkdown { color: #ffffff; }
+    h1, h2, h3, h4, .stMarkdown { color: #E0E0E0; }
     
     iframe[title="streamlit_geolocation.streamlit_geolocation"] {
         background-color: transparent !important; color-scheme: dark; border-radius: 5px;
     }
-    .time-label { font-size: 14px; font-weight: 600; color: #ffffff; margin-bottom: 5px; display: block; }
+    .time-label { font-size: 14px; font-weight: 600; color: #E0E0E0; margin-bottom: 5px; display: block; }
 </style>
 """, unsafe_allow_html=True)
 
 c_logo, c_menu = st.columns([2, 8])
-with c_logo: st.markdown("<h2 style='color: #2E7D32; margin-top: 0;'>🌿 AgroIA</h2>", unsafe_allow_html=True)
+with c_logo: st.markdown("<h2 style='color: #00E676; margin-top: 0;'>:material/compost: AgroIA</h2>", unsafe_allow_html=True)
 with c_menu:
-    opcion_menu = st.radio(
-        "Navegación Principal", 
-        ["Mapa", "Meteorología", "Suelo", "Estado de la Planta", "Satélite", "Diagnóstico IA"],
-        horizontal=True, label_visibility="collapsed"
-    )
+    opciones_menu = [
+        ":material/map: Mapa", 
+        ":material/air: Meteorología", 
+        ":material/landscape: Suelo", 
+        ":material/query_stats: Estado de la Planta", 
+        ":material/satellite_alt: Satélite", 
+        ":material/psychology: Diagnóstico IA"
+    ]
+    opcion_menu = st.radio("Navegación", opciones_menu, horizontal=True, label_visibility="collapsed")
 st.markdown("<br>", unsafe_allow_html=True) 
 
 # --- FUNCIONES AUXILIARES ---
 def grados_a_direccion(grados):
-    arr = ["Norte", "Norte-Noreste", "Noreste", "Este-Noreste", "Este", "Este-Sureste", "Sureste", "Sur-Sureste", "Sur", "Sur-Suroeste", "Suroeste", "Oeste-Suroeste", "Oeste", "Oeste-Noroeste", "Noroeste", "Norte-Noroeste"]
+    arr = ["Norte", "NNE", "Noreste", "ENE", "Este", "ESE", "Sureste", "SSE", "Sur", "SSO", "Suroeste", "OSO", "Oeste", "ONO", "Noroeste", "NNO"]
     return arr[int((grados/22.5)+.5) % 16]
 
 def obtener_elevacion(lat, lon):
@@ -177,10 +177,10 @@ def evaluar_potencial_crecimiento(lat, lon):
     rad = df_nasa['ALLSKY_SFC_SW_DWN'].mean() if 'ALLSKY_SFC_SW_DWN' in df_nasa else 0.0
     lluvia = df_nasa['PRECTOTCORR'].sum() if 'PRECTOTCORR' in df_nasa else 0.0
     
-    if rad > 15 and h_raiz > 0.25: e, m = "🟢 Óptimo", "Excelente reserva profunda."
-    elif rad > 15 and h_raiz < 0.15: e, m = "🔴 Alerta Crítica (Estrés)", "Acuífero agotado. Riegue ya."
-    elif rad <= 15 and h_raiz > 0.30: e, m = "🟡 Alerta Fúngica", "Poca luz y suelo saturado. Riesgo de hongos."
-    else: e, m = "🔵 Moderado", "Condiciones estándar."
+    if rad > 15 and h_raiz > 0.25: e, m = "Óptimo :material/check_circle:", "Excelente reserva profunda."
+    elif rad > 15 and h_raiz < 0.15: e, m = "Alerta Crítica :material/warning:", "Acuífero agotado. Riegue ya."
+    elif rad <= 15 and h_raiz > 0.30: e, m = "Alerta Fúngica :material/coronavirus:", "Poca luz y suelo saturado. Riesgo de hongos."
+    else: e, m = "Moderado :material/info:", "Condiciones estándar."
         
     return {"estado": e, "mensaje": m, "radiacion": round(rad, 2), "humedad": h_raiz, "lluvia": round(lluvia, 2)}
 
@@ -197,13 +197,13 @@ def calcular_area_hectareas(coordenadas):
 
 # --- 3. DESARROLLO DE LAS PÁGINAS ---
 
-if opcion_menu == "Mapa":
-    st.subheader("📍 Coordenadas de la Parcela")
+if opcion_menu == ":material/map: Mapa":
+    st.subheader(":material/location_on: Coordenadas de la Parcela")
     c_lat, c_lon, c_gps = st.columns([2, 2, 2])
     with c_lat: nuevo_lat = st.number_input("Latitud", value=st.session_state.lat, format="%.4f")
     with c_lon: nuevo_lon = st.number_input("Longitud", value=st.session_state.lon, format="%.4f")
     with c_gps:
-        st.write("O GPS actual:")
+        st.write("O usar GPS del dispositivo:")
         ubicacion_gps = streamlit_geolocation()
         if ubicacion_gps['latitude'] is not None and ubicacion_gps['longitude'] is not None:
             lat_ob = round(ubicacion_gps['latitude'], 4)
@@ -212,7 +212,7 @@ if opcion_menu == "Mapa":
                 st.session_state.lat, st.session_state.lon = lat_ob, lon_ob
                 st.rerun()
 
-    st.write("Haga **clic** sobre su parcela en el mapa para afinar la ubicación.")
+    st.write("Haga **clic** sobre su parcela en el mapa para afinar la ubicación central.")
     m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=14)
     folium.TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base').add_to(m)
     folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="green", icon="leaf")).add_to(m)
@@ -224,17 +224,17 @@ if opcion_menu == "Mapa":
             st.session_state.lat, st.session_state.lon = click_lat, click_lon
             st.rerun()
 
-elif opcion_menu == "Meteorología":
-    st.subheader(f"🌤️ Pronóstico Agrometeorológico ({st.session_state.lat}, {st.session_state.lon})")
+elif opcion_menu == ":material/air: Meteorología":
+    st.subheader(f":material/air: Pronóstico Agrometeorológico")
     json_clima = obtener_datos_clima(st.session_state.lat, st.session_state.lon)
     if json_clima and 'hourly' in json_clima:
         cur = json_clima['current_weather']
         st.markdown(f"**Condiciones en superficie:** Viento hacia el **{grados_a_direccion(cur['winddirection'])}** a {cur['windspeed']} km/h")
         c1, c2, c3, c4 = st.columns(4)
-        with c1: st.metric("🌡️ Temperatura", f"{cur['temperature']}°C")
-        with c2: st.metric("💧 Humedad Relativa", f"{json_clima['hourly']['relativehumidity_2m'][0]}%")
-        with c3: st.metric("🌬️ Presión Atmosférica", f"{json_clima['hourly']['pressure_msl'][0]} hPa")
-        with c4: st.metric("☁️ Punto de Rocío", f"{json_clima['hourly']['dewpoint_2m'][0]}°C")
+        with c1: st.metric(":material/device_thermostat: Temperatura", f"{cur['temperature']}°C")
+        with c2: st.metric(":material/humidity_mid: Humedad Relativa", f"{json_clima['hourly']['relativehumidity_2m'][0]}%")
+        with c3: st.metric(":material/compress: Presión Atmosférica", f"{json_clima['hourly']['pressure_msl'][0]} hPa")
+        with c4: st.metric(":material/water_drop: Punto de Rocío", f"{json_clima['hourly']['dewpoint_2m'][0]}°C")
         
         df_hourly = pd.DataFrame({
             'Fecha_Hora': pd.to_datetime(json_clima['hourly']['time']),
@@ -244,24 +244,24 @@ elif opcion_menu == "Meteorología":
         
         st.markdown("<br>", unsafe_allow_html=True)
         fig_et0 = go.Figure()
-        fig_et0.add_trace(go.Scatter(x=df_hourly['Fecha_Hora'], y=df_hourly['Evapotranspiración (mm)'], fill='tozeroy', mode='lines', line=dict(color='#FF5722', width=3), fillcolor='rgba(255, 87, 34, 0.3)', name='ET0'))
-        fig_et0.update_layout(title="Demanda Hídrica y Estrés Atmosférico (Evapotranspiración FAO)", template="plotly_dark", xaxis_title="", yaxis_title="Evapotranspiración (mm)", margin=dict(l=0, r=0, t=40, b=0))
+        fig_et0.add_trace(go.Scatter(x=df_hourly['Fecha_Hora'], y=df_hourly['Evapotranspiración (mm)'], fill='tozeroy', mode='lines', line=dict(color='#00E676', width=3), fillcolor='rgba(0, 230, 118, 0.2)', name='ET0'))
+        fig_et0.update_layout(title="Demanda Hídrica y Estrés Atmosférico (Evapotranspiración FAO)", template="plotly_dark", plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Evapotranspiración (mm)", margin=dict(l=0, r=0, t=40, b=0))
         st.plotly_chart(fig_et0, width="stretch", config={'displaylogo': False, 'locale': 'es'})
         
-        fig_precip = px.bar(df_hourly, x='Fecha_Hora', y='Prob_Lluvia (%)', color='Prob_Lluvia (%)', color_continuous_scale=['#E1F5FE', '#0D47A1'], title="Certidumbre y Probabilidad de Precipitación (%)", template="plotly_dark")
-        fig_precip.update_layout(xaxis_title="", margin=dict(l=0, r=0, t=40, b=0))
+        fig_precip = px.bar(df_hourly, x='Fecha_Hora', y='Prob_Lluvia (%)', color='Prob_Lluvia (%)', color_continuous_scale=['#1E2329', '#00E676'], title="Certidumbre y Probabilidad de Precipitación (%)", template="plotly_dark")
+        fig_precip.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', xaxis_title="", margin=dict(l=0, r=0, t=40, b=0))
         st.plotly_chart(fig_precip, width="stretch", config={'displaylogo': False, 'locale': 'es'})
 
-elif opcion_menu == "Suelo":
-    st.subheader(f"🌍 Perfil Físico del Suelo (ERA5-Land: Copernicus)")
+elif opcion_menu == ":material/landscape: Suelo":
+    st.subheader(f":material/landscape: Perfil Físico del Suelo (Copernicus)")
     datos_suelo = obtener_datos_suelo_copernicus(st.session_state.lat, st.session_state.lon)
     if datos_suelo:
         ts = datos_suelo.get('timestamp_extraido')
         if ts:
             fecha_formateada = datetime.strptime(ts, "%Y-%m-%dT%H:%M").strftime("%d de %B de %Y a las %H:%M")
-            st.success(f"⏱️ **Lectura Satelital Procesada:** Los datos corresponden al **{fecha_formateada}**.")
+            st.success(f":material/satellite_alt: **Lectura Procesada:** {fecha_formateada}.")
             
-        st.markdown("### 💧 Humedad Volumétrica del Suelo (m³/m³)")
+        st.markdown("### :material/water_drop: Humedad Volumétrica (m³/m³)")
         ch1, ch2, ch3, ch4 = st.columns(4)
         ch1.metric("0 - 7 cm", f"{datos_suelo.get('soil_moisture_0_to_7cm')} m³" if datos_suelo.get('soil_moisture_0_to_7cm') is not None else "N/D")
         ch2.metric("7 - 28 cm", f"{datos_suelo.get('soil_moisture_7_to_28cm')} m³" if datos_suelo.get('soil_moisture_7_to_28cm') is not None else "N/D")
@@ -269,30 +269,30 @@ elif opcion_menu == "Suelo":
         ch4.metric("100 - 289 cm", f"{datos_suelo.get('soil_moisture_100_to_255cm')} m³" if datos_suelo.get('soil_moisture_100_to_255cm') is not None else "N/D")
         
         st.markdown("---")
-        st.markdown("### 🌡️ Temperatura del Perfil del Suelo (°C)")
+        st.markdown("### :material/device_thermostat: Temperatura del Perfil (°C)")
         ct1, ct2, ct3, ct4 = st.columns(4)
         ct1.metric("0 - 7 cm", f"{datos_suelo.get('soil_temperature_0_to_7cm')} °C" if datos_suelo.get('soil_temperature_0_to_7cm') is not None else "N/D")
         ct2.metric("7 - 28 cm", f"{datos_suelo.get('soil_temperature_7_to_28cm')} °C" if datos_suelo.get('soil_temperature_7_to_28cm') is not None else "N/D")
         ct3.metric("28 - 100 cm", f"{datos_suelo.get('soil_temperature_28_to_100cm')} °C" if datos_suelo.get('soil_temperature_28_to_100cm') is not None else "N/D")
         ct4.metric("100 - 289 cm", f"{datos_suelo.get('soil_temperature_100_to_255cm')} °C" if datos_suelo.get('soil_temperature_100_to_255cm') is not None else "N/D")
-    else: st.error("❌ Error satelital.")
+    else: st.error("Error en la extracción satelital.")
 
-elif opcion_menu == "Estado de la Planta":
-    st.subheader("⚡ Potencial de Crecimiento y Estado Termo-Hídrico")
-    with st.spinner("Analizando matrices satelitales conjuntas (NASA POWER + Copernicus)..."):
+elif opcion_menu == ":material/query_stats: Estado de la Planta":
+    st.subheader(":material/query_stats: Potencial de Crecimiento")
+    with st.spinner("Analizando matrices satelitales conjuntas..."):
         res_sinergia = evaluar_potencial_crecimiento(st.session_state.lat, st.session_state.lon)
     if res_sinergia:
         st.markdown(f"### Diagnóstico del Lote: {res_sinergia['estado']}")
         st.write(f"**Análisis:** {res_sinergia['mensaje']}")
         st.markdown("---")
         c1, c2, c3 = st.columns(3)
-        c1.metric("☀️ Energía PAR", f"{res_sinergia['radiacion']} MJ/m²/día")
-        c2.metric("💧 Reserva Profunda", f"{res_sinergia['humedad']} m³/m³")
-        c3.metric("🌧️ Lluvia Acumulada", f"{res_sinergia['lluvia']} mm")
-    else: st.error("❌ Error espacial.")
+        c1.metric(":material/light_mode: Energía PAR", f"{res_sinergia['radiacion']} MJ/m²/día")
+        c2.metric(":material/water_drop: Reserva Profunda", f"{res_sinergia['humedad']} m³/m³")
+        c3.metric(":material/rainy: Lluvia Acumulada", f"{res_sinergia['lluvia']} mm")
+    else: st.error("Error en el análisis espacial.")
 
-elif opcion_menu == "Satélite":
-    st.subheader(f"🛰️ Análisis Satelital de Salud Vegetal (NDVI)")
+elif opcion_menu == ":material/satellite_alt: Satélite":
+    st.subheader(f":material/satellite_alt: Análisis Satelital (NDVI)")
     if not gee_activo: st.error("⚠️ Error: Google Earth Engine no está inicializado.")
     else:
         with st.spinner("Procesando mosaico satelital..."):
@@ -305,7 +305,7 @@ elif opcion_menu == "Satélite":
                     return imagen.updateMask(qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0)))
                 coleccion = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED").filterBounds(punto).filterDate(fecha_inicio.strftime('%Y-%m-%d'), fecha_fin.strftime('%Y-%m-%d')).map(enmascarar_nubes) 
                 
-                if coleccion.size().getInfo() == 0: st.warning("☁️ Cobertura nubosa total y permanente.")
+                if coleccion.size().getInfo() == 0: st.warning("Cobertura nubosa total.")
                 else:
                     ndvi = coleccion.median().normalizedDifference(['B8', 'B4']).rename('NDVI')
                     map_id_dict = ee.Image(ndvi).getMapId({'min': 0.1, 'max': 0.6, 'palette': ['#d73027', '#f46d43', '#fdae61', '#fee08b', '#d9ef8b', '#a6d96a', '#66bd63', '#1a9850']})
@@ -314,20 +314,20 @@ elif opcion_menu == "Satélite":
                     folium.TileLayer(tiles=map_id_dict['tile_fetcher'].url_format, attr='Google Earth Engine', overlay=True, opacity=0.7).add_to(m_ndvi)
                     folium.Marker([st.session_state.lat, st.session_state.lon], icon=folium.Icon(color="red")).add_to(m_ndvi)
                     st_folium(m_ndvi, width="100%", height=450, key="mapa_ndvi")
-            except Exception as e: st.error(f"❌ Error satelital: {e}")
+            except Exception as e: st.error(f"Error satelital: {e}")
 
-# --- SECCIÓN DIAGNÓSTICO IA (COMITÉ DE MODULO ÚNICO CON VISUAL RAG) ---
-elif opcion_menu == "Diagnóstico IA":
-    st.subheader("🤖 Diagnóstico Fitosanitario y Dosificación (Comité de IA)")
-    st.warning("**⚠️ Aviso Legal:** Sistema operado por Comité de Inteligencia Artificial. Verifique con un agrónomo.")
+# --- SECCIÓN DIAGNÓSTICO IA ---
+elif opcion_menu == ":material/psychology: Diagnóstico IA":
+    st.subheader(":material/psychology: Diagnóstico Fitosanitario y Dosificación")
+    st.info(":material/info: **Aviso:** Sistema operado por Comité de Inteligencia Artificial. Verifique con un agrónomo.")
     
     # 1. PERFIL DEL LOTE
     st.markdown("### 1. Perfil del Lote")
     cultivos_dict = {
-        "🌾 Granos y Cereales (Ciclo Corto)": ["Arroz", "Maíz Suave", "Maíz Duro", "Soya", "Trigo", "Avena"],
-        "🍫 Perennes / Exportación (Larga Duración)": ["Cacao", "Banano", "Plátano", "Café", "Palma Aceitera", "Mango"],
-        "🥔 Raíces y Tubérculos": ["Papa", "Yuca", "Camote", "Zanahoria"],
-        "🍅 Hortícolas y Legumbres": ["Tomate", "Cebolla", "Pimiento", "Brócoli", "Lechuga", "Fréjol", "Arveja"],
+        "Granos y Cereales (Ciclo Corto)": ["Arroz", "Maíz Suave", "Maíz Duro", "Soya", "Trigo", "Avena"],
+        "Perennes / Exportación (Larga Duración)": ["Cacao", "Banano", "Plátano", "Café", "Palma Aceitera", "Mango"],
+        "Raíces y Tubérculos": ["Papa", "Yuca", "Camote", "Zanahoria"],
+        "Hortícolas y Legumbres": ["Tomate", "Cebolla", "Pimiento", "Brócoli", "Lechuga", "Fréjol", "Arveja"],
         "Otro (Especifique)": ["Otro"]
     }
     
@@ -338,7 +338,7 @@ elif opcion_menu == "Diagnóstico IA":
         if cultivo_seleccionado == "Otro": cultivo_seleccionado = st.text_input("Ingrese el nombre del cultivo:")
 
     st.markdown("#### Cronología del Cultivo")
-    es_perenne = categoria_seleccionada == "🍫 Perennes / Exportación (Larga Duración)"
+    es_perenne = categoria_seleccionada == "Perennes / Exportación (Larga Duración)"
     if es_perenne:
         col_ed1, col_ed2, col_ed3 = st.columns(3)
         with col_ed1: edad_anios = st.number_input("Años:", min_value=0, value=3)
@@ -352,58 +352,42 @@ elif opcion_menu == "Diagnóstico IA":
 
     st.markdown("---")
 
-    # 2. GPS Y DELIMITACIÓN
+    # 2. GPS Y DELIMITACIÓN (LÁPIZ FOLIUM DRAW)
     st.markdown("### 2. Geolocalice y Delimite su Terreno")
-    c_desc_gps, c_btn_gps = st.columns([4, 1])
-    with c_desc_gps: st.write("Presione el botón para centrar el mapa. Luego marque las esquinas de su lote.")
-    with c_btn_gps:
-        ubicacion_gps = streamlit_geolocation()
-        if ubicacion_gps['latitude'] is not None and ubicacion_gps['longitude'] is not None:
-            lat_ob, lon_ob = round(ubicacion_gps['latitude'], 4), round(ubicacion_gps['longitude'], 4)
-            if lat_ob != st.session_state.lat or lon_ob != st.session_state.lon:
-                st.session_state.lat, st.session_state.lon = lat_ob, lon_ob
-                st.rerun()
-
-    c_btn_marcar, c_btn_deshacer, c_btn_cerrar = st.columns(3)
-    puntos_mapeo = st.session_state.temp_coords
-    poligono_cerrado = False
+    st.write("Utilice la herramienta de dibujo (pentágono) en la esquina superior izquierda del mapa para trazar el polígono de su lote. Haga clic en el primer punto para cerrar la figura.")
     
-    with c_btn_marcar:
-        if st.button("📍 Marcar Esquina (GPS)"):
-            puntos_mapeo.append([st.session_state.lon, st.session_state.lat])
-            st.session_state.temp_coords = puntos_mapeo
-            st.rerun()
-    with c_btn_deshacer:
-        if st.button("↩️ Deshacer Punto") and puntos_mapeo:
-            puntos_mapeo.pop()
-            st.session_state.temp_coords = puntos_mapeo
-            st.rerun()
-    with c_btn_cerrar:
-        if len(puntos_mapeo) >= 3:
-            if st.button("✅ Cerrar Polígono"):
-                puntos_mapeo.append(puntos_mapeo[0])
-                st.session_state.temp_coords = puntos_mapeo
-                st.rerun()
-    
-    m_diag = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=16, max_zoom=20)
+    m_diag = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=17, max_zoom=20)
     folium.TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite Base').add_to(m_diag)
     
-    if puntos_mapeo:
-        for i, punto in enumerate(puntos_mapeo):
-            folium.Marker([punto[1], punto[0]], icon=folium.DivIcon(html=f'<div style="font-size: 14pt; color: white; background-color: blue; border-radius: 50%; width: 25px; height: 25px; text-align: center; font-weight: bold; border: 2px solid white;">{i+1}</div>')).add_to(m_diag)
-        coordenadas_linea = [[p[1], p[0]] for p in puntos_mapeo]
-        if len(puntos_mapeo) > 1:
-            if puntos_mapeo[0] == puntos_mapeo[-1]:
-                folium.Polygon(locations=coordenadas_linea, color="#00E676", weight=3, fill=True, fill_color="#00E676", fill_opacity=0.3).add_to(m_diag)
-                poligono_cerrado = True
-            else:
-                folium.PolyLine(locations=coordenadas_linea, color="#2196F3", weight=3, dash_array='5, 5').add_to(m_diag)
-    st_folium(m_diag, width="100%", height=450, key="mapa_diag_puntos", returned_objects=[])
+    # Agregar la herramienta interactiva de dibujo
+    Draw(
+        export=False,
+        position='topleft',
+        draw_options={
+            'polyline': False,
+            'rectangle': False,
+            'circle': False,
+            'circlemarker': False,
+            'marker': False,
+            'polygon': {'allowIntersection': False, 'shapeOptions': {'color': '#00E676', 'fillOpacity': 0.3}}
+        },
+        edit_options={'poly': {'allowIntersection': False}}
+    ).add_to(m_diag)
+
+    output_diag = st_folium(m_diag, width="100%", height=450, key="mapa_diag_draw")
     
     area_calculada = 0.0
-    if poligono_cerrado:
-        area_calculada = calcular_area_hectareas(puntos_mapeo[:-1])
-        st.success(f"✅ Superficie satelital: **{area_calculada:.2f} Hectáreas**")
+    poligono_cerrado = False
+    
+    # Lógica para leer el dibujo capturado
+    if output_diag and output_diag.get("all_drawings"):
+        drawings = output_diag["all_drawings"]
+        if len(drawings) > 0:
+            # Extraer las coordenadas del último polígono dibujado
+            last_polygon = drawings[-1]['geometry']['coordinates'][0]
+            area_calculada = calcular_area_hectareas(last_polygon)
+            poligono_cerrado = True
+            st.success(f":material/architecture: Superficie trazada: **{area_calculada:.2f} Hectáreas**")
 
     st.markdown("---")
 
@@ -422,53 +406,51 @@ elif opcion_menu == "Diagnóstico IA":
         nombre_lote_form = st.text_input("Asigne un nombre a este Lote:", value=st.session_state.nombre_lote_global, placeholder="Ej: Lote de la Loma")
         if nombre_lote_form: st.session_state.nombre_lote_global = nombre_lote_form
         
-        parte_afectada = st.selectbox("🍂 Órgano afectado:", ["Hojas", "Tallo o Tronco", "Fruto o Espiga", "Raíz", "Toda la planta"])
-        umbral_afectacion = st.selectbox("📊 Porcentaje del cultivo afectado (Umbral visual):", ["Menos del 10% (Foco aislado)", "Del 10% al 50%", "Más del 50% (Ataque masivo)"])
-        heridas_previas = st.radio("✂️ ¿Realizó podas, cortes recientes o hubo granizo?", ["No", "Sí (Posibles heridas de entrada)"], horizontal=True)
-        presencia_insectos = st.radio("🪲 ¿Ha notado insectos (ej. pulgones, mosca blanca) cerca del daño?", ["No", "Sí (Posibles vectores)"], horizontal=True)
+        parte_afectada = st.selectbox("Órgano afectado:", ["Hojas", "Tallo o Tronco", "Fruto o Espiga", "Raíz", "Toda la planta"])
+        umbral_afectacion = st.selectbox("Porcentaje del cultivo afectado (Umbral):", ["Menos del 10% (Foco aislado)", "Del 10% al 50%", "Más del 50% (Ataque masivo)"])
+        heridas_previas = st.radio("¿Realizó podas, cortes o hubo granizo?", ["No", "Sí (Posibles heridas de entrada)"], horizontal=True)
+        presencia_insectos = st.radio("¿Notó insectos cerca del daño?", ["No", "Sí (Posibles vectores)"], horizontal=True)
         
     with c_sint2:
-        st.markdown("<span class='time-label'>⏱️ Tiempo exacto de evolución del síntoma:</span>", unsafe_allow_html=True)
+        st.markdown("<span class='time-label'>Tiempo exacto de evolución del síntoma:</span>", unsafe_allow_html=True)
         col_sin1, col_sin2 = st.columns(2)
         with col_sin1: sint_num = st.number_input("Cantidad", min_value=1, value=5, label_visibility="collapsed")
         with col_sin2: sint_uni = st.selectbox("Unidad", ["Días", "Semanas", "Meses"], label_visibility="collapsed")
         tiempo_sintomas_str = f"{sint_num} {sint_uni}"
         
-        tipo_riego = st.selectbox("💧 Tipo de Riego:", ["Secano", "Goteo", "Aspersión", "Gravedad", "Río"])
-        sintomas_texto = st.text_area("✍️ Describa el problema detalladamente:")
+        tipo_riego = st.selectbox("Tipo de Riego:", ["Secano", "Goteo", "Aspersión", "Gravedad", "Río"])
+        sintomas_texto = st.text_area("Describa el problema detalladamente:")
         
-        # Múltiples fotos cargadas desde la galería
-        fotos_planta = st.file_uploader("📸 Subir fotos del problema (Se recomiendan 2 a 4 fotos):", type=['jpg', 'jpeg', 'png'], accept_multiple_files=True)
+        fotos_planta = st.file_uploader("Subir fotos del problema (2 a 4 recomendadas):", type=['jpg', 'jpeg', 'png'], accept_multiple_files=True)
         
         if fotos_planta:
-            st.markdown("<span class='time-label'>Evidencia fotográfica cargada:</span>", unsafe_allow_html=True)
+            st.markdown("<span class='time-label'>Evidencia cargada:</span>", unsafe_allow_html=True)
             cols = st.columns(min(len(fotos_planta), 3) if len(fotos_planta) > 0 else 1)
             for i, foto in enumerate(fotos_planta):
                 cols[i % 3].image(foto, use_container_width=True)
 
-    # EJECUCIÓN DEL COMITÉ DE MODULO ÚNICO DE GEMINI (CON FILTRO DE VECTORES SUPABASE)
-    if st.button("🧠 Ejecutar Comité de IA", use_container_width=True):
+    # EJECUCIÓN DEL COMITÉ IA
+    if st.button("Ejecutar Diagnóstico Multi-Agente", use_container_width=True, type="primary"):
         if not gemini_activo: 
             st.error("⚠️ La API de Gemini no está configurada.")
         elif not poligono_cerrado: 
-            st.warning("⚠️ Por favor, delimite primero el perímetro de su lote en el mapa (Paso 2).")
+            st.warning("⚠️ Por favor, delimite primero el perímetro de su lote en el mapa (Paso 2) usando el lápiz de trazado.")
         elif len(sintomas_texto) < 5 and not fotos_planta: 
             st.warning("⚠️ Describa el problema o suba fotos.")
         else:
             nombre_terreno = st.session_state.nombre_lote_global if st.session_state.nombre_lote_global else "Lote sin nombre"
             model_flash = genai.GenerativeModel('gemini-1.5-flash')
             
-            with st.status("🧠 Ejecutando Comité de IA...", expanded=True) as status:
+            with st.status(":material/psychology: Ejecutando Comité de IA...", expanded=True) as status:
                 try:
-                    # LÓGICA DE BÚSQUEDA DE SIMILITUD DE VECTORES EN SEGUNDO PLANO
                     casos_referencia = []
                     if fotos_planta and supabase_activo and modelo_vectores is not None:
                         try:
-                            st.write("🌌 **Fase Vectorial:** Convirtiendo evidencia biológica en embeddings...")
+                            st.write(":material/hub: **Fase Vectorial:** Convirtiendo evidencia en embeddings...")
                             imagen_usuario = Image.open(fotos_planta[0])
                             embedding_usuario = modelo_vectores.encode(imagen_usuario).tolist()
                             
-                            st.write("🔍 **PostgreSQL Query:** Extrayendo atlas y referencias empíricas de Supabase...")
+                            st.write(":material/database: **Base de Datos:** Extrayendo atlas y referencias empíricas...")
                             coincidencias = supabase_cliente.table("catalogo_enfermedades")\
                                 .select("enfermedad, url_imagen, descripcion_tecnica")\
                                 .eq("cultivo", cultivo_seleccionado)\
@@ -477,79 +459,72 @@ elif opcion_menu == "Diagnóstico IA":
                         except Exception as err_db:
                             st.caption(f"Aviso técnico de base de datos: {err_db}. Continuando con modo autónomo.")
                     
-                    # AGENTE 1: EL PATÓLOGO (VISIÓN COMPUESTA)
-                    st.write("🔍 **Agente 1 (Patólogo):** Analizando patrones morfológicos foliares...")
+                    st.write(":material/search: **Agente 1 (Patólogo):** Analizando patrones morfológicos...")
                     
                     prompt_patologo = f"""
-                    Eres el 'Patólogo Principal'. Tu trabajo es analizar la serie de imágenes del agricultor y compararlas de forma sinérgica con las de nuestro catálogo experto para identificar la morfología exacta del daño.
+                    Eres el 'Patólogo Principal'. Tu trabajo es analizar la serie de imágenes del agricultor y compararlas de forma sinérgica con las de nuestro catálogo experto.
                     Cultivo: {cultivo_seleccionado}. Órgano afectado: {parte_afectada}.
-                    Descripción del agricultor: {sintomas_texto}. Presencia de insectos reportada: {presencia_insectos}.
+                    Descripción del agricultor: {sintomas_texto}. Presencia de insectos: {presencia_insectos}.
                     
-                    CASOS DE REFERENCIA DE EXPERTOS EXTRAÍDOS DE POSTGRESQL PARA COMPARACIÓN:
+                    CASOS DE REFERENCIA (POSTGRESQL):
                     """
-                    
                     for idx, caso in enumerate(casos_referencia):
-                        prompt_patologo += f"\n- Caso Referencia {idx+2}: Confirmado para '{caso['enfermedad']}'. Informe botánico: {caso['descripcion_tecnica']}"
+                        prompt_patologo += f"\n- Referencia {idx+2}: '{caso['enfermedad']}'. Informe botánico: {caso['descripcion_tecnica']}"
                         
                     prompt_patologo += """
-                    \nREGLAS DE RIGOR TÉCNICO:
-                    1. Detalla minuciosamente si la necrosis de las hojas es 'seca' (nutrientes/quema) o 'acuosa' (patógenos microbianos).
-                    2. Evalúa si los insectos reportados generaron micro-perforaciones del aparato picador-chupador (vectores víricos).
-                    3. Evalúa indicios clínicos de enanismo o atrofia celular en la planta.
+                    REGLAS DE RIGOR TÉCNICO:
+                    1. Detalla si la necrosis es 'seca' (nutrientes/quema) o 'acuosa' (patógenos microbianos).
+                    2. Evalúa perforaciones por aparato picador-chupador.
+                    3. Evalúa enanismo celular.
                     4. PROHIBIDO RECOMENDAR REMEDIOS O AGROQUÍMICOS.
                     Entrega únicamente un informe macroscópico y morfológico unificado.
                     """
                     
                     paquete_patologo = [prompt_patologo]
                     if fotos_planta:
-                        for foto in fotos_planta:
-                            paquete_patologo.append(Image.open(foto))
-                    for caso in casos_referencia:
-                        paquete_patologo.append(caso['url_imagen'])
+                        for foto in fotos_planta: paquete_patologo.append(Image.open(foto))
+                    for caso in casos_referencia: paquete_patologo.append(caso['url_imagen'])
                         
                     res_patologo = model_flash.generate_content(paquete_patologo).text
                     
-                    # AGENTE 2: EL FISIÓLOGO (CONTEXTO EPIDEMIOLÓGICO)
-                    st.write("🌦️ **Agente 2 (Fisiólogo):** Evaluando triángulo epidemiológico...")
+                    st.write(":material/device_thermostat: **Agente 2 (Fisiólogo):** Evaluando triángulo epidemiológico...")
                     prompt_fisiologo = f"""
-                    Eres el 'Fisiólogo Epidemiólogo'. Analiza los datos de entorno y dictamina la viabilidad biológica del ataque.
+                    Eres el 'Fisiólogo Epidemiólogo'. Analiza el entorno y dictamina la viabilidad biológica.
                     Cultivo: {cultivo_seleccionado} ({tiempo_planta_str}). Altitud: {elevacion_actual} msnm.
-                    Clima en vivo: {clima_texto}. Heridas por podas/clima: {heridas_previas}. Evolución cronológica: {tiempo_sintomas_str}.
-                    INFORME MORFOLÓGICO DEL PATÓLOGO: {res_patologo}
+                    Clima: {clima_texto}. Heridas: {heridas_previas}. Evolución cronológica: {tiempo_sintomas_str}.
+                    INFORME DEL PATÓLOGO: {res_patologo}
                     
                     REGLAS DE RIGOR TÉCNICO:
-                    1. Triángulo de la Enfermedad: Determina si el clima (humedad/presión atmosférica) y el estado físico de la planta crearon la zona óptima de propagación.
-                    2. Correlación de Estrés: Determina si las variaciones de evapotranspiración mermaron el sistema inmunológico vegetal.
-                    3. Contrasta la cronología del síntoma con la etapa fenológica del lote.
-                    Entrega un dictamen de probabilidad epidemiológica concluyendo con las 2 causas de origen más certeras.
+                    1. Triángulo de la Enfermedad: Determina propagación por clima (humedad/presión).
+                    2. Correlación de Estrés: Determina merma del sistema inmunológico por evapotranspiración.
+                    3. Contrasta la cronología del síntoma.
+                    Entrega dictamen de probabilidad epidemiológica y concluye con las 2 causas de origen.
                     """
                     res_fisiologo = model_flash.generate_content(prompt_fisiologo).text
                     
-                    # AGENTE 3: EL DIRECTOR DE SANIDAD (PRESCRIPTOR Y AUDITOR LÓGICO)
-                    st.write("📋 **Agente 3 (Director de Sanidad):** Auditando riesgos y calculando volumetría...")
+                    st.write(":material/assignment: **Agente 3 (Director de Sanidad):** Auditando riesgos y matemática...")
                     prompt_director = f"""
-                    Eres el 'Director de Sanidad Vegetal', máxima autoridad lógica y matemática de AgroIA. 
-                    Superficie de dosificación: {area_calculada:.2f} Hectáreas. Cultivo: {cultivo_seleccionado}. Umbral de daño: {umbral_afectacion}.
-                    INFORME MACRO DEL PATÓLOGO: {res_patologo}
-                    DICTAMEN CLIMÁTICO DEL FISIÓLOGO: {res_fisiologo}
+                    Eres el 'Director de Sanidad Vegetal', máxima autoridad lógica. 
+                    Superficie de dosificación: {area_calculada:.2f} Hectáreas. Cultivo: {cultivo_seleccionado}. Umbral: {umbral_afectacion}.
+                    INFORME PATÓLOGO: {res_patologo}
+                    DICTAMEN FISIÓLOGO: {res_fisiologo}
                     
                     REGLAS DE SEGURIDAD INQUEBRANTABLES:
-                    1. Regla Anti-Clorosis: Si los informes describen clorosis o amarillamiento foliar, PROHIBIDO recetar fertilizantes nitrogenados o urea inmediatamente. El exceso de nitrógeno debilita los tejidos y amplifica el ataque de plagas voraces.
-                    2. Ley de Umbrales: Si el umbral visual reportado es bajo (<10%), prohíbe el uso de químicos pesados. Receta únicamente control de fauna benéfica (abejas/mariquitas) o podas sanitarias manuales.
-                    3. Cirugía Matemática: Si se requiere tratamiento químico, calcula la masa/volumen exacto total de producto comercial necesario para cubrir las {area_calculada:.2f} Hectáreas de superficie, especificando el volumen de agua idóneo para evitar fitotoxicidad por dilución deficiente.
+                    1. Regla Anti-Clorosis: Si hay clorosis foliar, PROHIBIDO recetar fertilizantes nitrogenados inmediatamente.
+                    2. Ley de Umbrales: Si el umbral es bajo (<10%), prohíbe químicos pesados. Receta control biológico o poda.
+                    3. Cirugía Matemática: Si se requiere tratamiento químico, calcula volumen exacto de producto para cubrir las {area_calculada:.2f} Hectáreas. Especifica volumen de agua de mezcla para evitar fitotoxicidad.
                     
-                    Redacta la RECETA AGRONÓMICA FINAL ejecutiva orientada al agricultor. Detalla la matemática de dosificación de forma exacta.
+                    Redacta la RECETA AGRONÓMICA FINAL ejecutiva. Detalla la matemática de forma exacta.
                     """
                     res_director = model_flash.generate_content(prompt_director).text
                     
-                    status.update(label="✅ Consenso e Informes del Comité Finalizados", state="complete", expanded=False)
+                    status.update(label="Consenso e Informes del Comité Finalizados", state="complete", expanded=False)
                     
-                    # Desplegar la receta final limpia al usuario
-                    st.success(f"### 📋 Receta Oficial para: {nombre_terreno}")
+                    st.success(f"### :material/prescriptions: Receta Oficial para: {nombre_terreno}")
                     st.write(res_director)
                     
                     st.markdown("<br>", unsafe_allow_html=True)
-                    with st.expander("🔍 Ver Informes Técnicos de Respaldo (Transparencia del Comité)"):
+                    with st.expander(":material/history: Ver Informes de Respaldo (Transparencia)"):
                         st.markdown("**Reporte de Morfología y Vectores (Patólogo):**")
                         st.write(res_patologo)
                         st.markdown("---")
@@ -557,5 +532,5 @@ elif opcion_menu == "Diagnóstico IA":
                         st.write(res_fisiologo)
                         
                 except Exception as e:
-                    status.update(label="❌ Error de Ejecución en el Flujo", state="error", expanded=False)
-                    st.error(f"Ocurrió una falla crítica en la simulación del Comité: {e}")
+                    status.update(label="Error de Ejecución en el Flujo", state="error", expanded=False)
+                    st.error(f"Falla crítica en la simulación del Comité: {e}")
