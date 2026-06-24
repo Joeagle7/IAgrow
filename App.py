@@ -20,7 +20,7 @@ from sentence_transformers import SentenceTransformer
 warnings.filterwarnings('ignore')
 
 # --- 1. CONFIGURACIÓN Y ESTADO DE MEMORIA ---
-st.set_page_config(page_title="AgroIA", page_icon=":material/compost:", layout="wide")
+st.set_page_config(page_title="Agrobrújula", page_icon=":material/compost:", layout="wide")
 
 if "lat" not in st.session_state: st.session_state.lat = -2.1962
 if "lon" not in st.session_state: st.session_state.lon = -79.8862
